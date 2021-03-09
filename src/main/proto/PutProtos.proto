@@ -10,6 +10,7 @@ message PutRequest {
   required bytes row = 1;
   required bytes column = 2;
   required int64 timestamp = 3;
+  required bytes value = 4;
 }
 
 message PutResponse {
