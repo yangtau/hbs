@@ -8,9 +8,11 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CoprocessorEnvironment;
 import org.apache.hadoop.hbase.TableName;
-import org.apache.hadoop.hbase.client.*;
+import org.apache.hadoop.hbase.client.ConnectionFactory;
+import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.ServiceCaller;
 import org.apache.hadoop.hbase.coprocessor.CoprocessorException;
-import org.apache.hadoop.hbase.coprocessor.RegionCoprocessor;
 import org.apache.hadoop.hbase.coprocessor.RegionCoprocessorEnvironment;
 import org.apache.hadoop.hbase.regionserver.Region;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -23,7 +25,7 @@ import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
-public class GetEndpoint extends GetProtos.GetService implements RegionCoprocessor {
+public class GetEndpoint extends GetProtos.GetService implements HBSCoprocessor {
     private RegionCoprocessorEnvironment env;
 
     // run Get request on the coprocessor
@@ -53,42 +55,43 @@ public class GetEndpoint extends GetProtos.GetService implements RegionCoprocess
     }
 
     @Override
-    public void stop(CoprocessorEnvironment env) {
-        // do noting
-    }
-
-    @Override
     public Iterable<Service> getServices() {
         return Collections.singleton(this);
     }
 
-    private void fillResponse(Cell c, GetProtos.GetResponse.Builder builder) {
 
-    }
-
+    /***************************************************************************
+     * Algorithm of Get:
+     * data mode: key -> (value, WT, RT, C)
+     * get(key, TS):
+     *     version =  max(c.WT if c.WT < TS for c in data[key])
+     *     cell = for c in data[key] where c.WT == version
+     *     if cell.RT < TS:
+     *         cell.RT = TS
+     *     return cell
+     */
     @Override
     public void get(RpcController controller, GetProtos.GetRequest request, RpcCallback<GetProtos.GetResponse> done) {
         Region region = env.getRegion();
         GetProtos.GetResponse.Builder rsp = GetProtos.GetResponse.newBuilder().setError(false).setCommitted(true);
         byte[] row = request.getRow().toByteArray();
         byte[] family = request.getColumn().toByteArray();
-        long txnTs = request.getTimestamp();
+        long requestTs = request.getTimestamp();
 
+        // RT and WT for the data cell to be read
         long readTs = -1;
         long writeTs = -1;
 
         try {
             Get get = new Get(row)
                     .addFamily(family)
-                    .setTimeRange(0, txnTs) // read in [0, txnTs)
+                    .setTimeRange(0, requestTs) // read in [0, requestTs)
                     .readVersions(1); // read the last version
 
-            region.startRegionOperation();
-            Region.RowLock lock = region.getRowLock(row, false);
+            Region.RowLock lock = getLock(region, row);
             try {
                 // TODO: get(get, false) doest not invoke other coprocessors
                 for (Cell c : region.get(get, false)) {
-                    assert Arrays.equals(family, c.getFamilyArray()) : "Must get data from this family";
                     byte[] qualifier = c.getQualifierArray();
                     byte[] value = c.getValueArray();
                     if (Arrays.equals(qualifier, Constants.ReadTimestampQualifierBytes))
@@ -99,17 +102,17 @@ public class GetEndpoint extends GetProtos.GetService implements RegionCoprocess
                         rsp.setCommitted(false);
                     writeTs = c.getTimestamp();
                 }
+                rsp.setTimestamp(writeTs); // version of the data gotten, thus the writeTimestamp
 
                 // read something, and this read has bigger readTs than what has been recorded (readTs)
                 // put(col: "$family:@RT", value: txnTs, version: writeTs)
-                if (readTs < txnTs && rsp.hasValue()) {
+                if (readTs < requestTs && rsp.hasValue()) {
                     Put put = new Put(row, writeTs)
-                            .addColumn(family, Constants.ReadTimestampQualifierBytes, Bytes.toBytes(txnTs));
+                            .addColumn(family, Constants.ReadTimestampQualifierBytes, Bytes.toBytes(requestTs));
                     region.put(put);
                 }
             } finally {
-                lock.release();
-                region.closeRegionOperation();
+                releaseLock(region, lock);
             }
 
             // do callback after releasing locks
