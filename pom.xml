@@ -10,8 +10,8 @@
     <packaging>jar</packaging>
 
     <properties>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
+        <maven.compiler.source>15</maven.compiler.source>
+        <maven.compiler.target>15</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -23,6 +23,7 @@
                 <artifactId>maven-source-plugin</artifactId>
                 <version>3.2.1</version>
             </plugin>
+
             <!--  shade some jar -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -51,6 +52,8 @@
                     <shadedClassifierName>shaded</shadedClassifierName>
                 </configuration>
             </plugin>
+
+            <!-- compile protobuf -->
             <plugin>
                 <groupId>org.xolstice.maven.plugins</groupId>
                 <artifactId>protobuf-maven-plugin</artifactId>
@@ -64,6 +67,13 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+
+            <!-- Test -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>2.22.0</version>
             </plugin>
         </plugins>
     </build>
@@ -83,6 +93,26 @@
             <groupId>com.google.protobuf</groupId>
             <artifactId>protobuf-java</artifactId>
             <version>3.11.4</version>
+        </dependency>
+
+        <!-- Test -->
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <version>1.7.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <version>5.7.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <version>5.7.1</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
