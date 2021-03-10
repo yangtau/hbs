@@ -68,7 +68,7 @@ class GetEndpointTest {
 
     @Test
     void getCommittedAndUncommitted() throws ExecutionException, InterruptedException, IOException {
-        TestUtil.DeleteTable(conf, tableName, family);
+        TestUtil.DeleteTable(conf, tableName);
         TestUtil.CreateTable(conf, tableName, family);
         var value = "hello";
 
@@ -85,19 +85,18 @@ class GetEndpointTest {
         checkReadTimestamp("row1", 1L, 2L);
 
         // Read committed
-        TestUtil.put(conf, tableName, "row2", 3L, family, Constants.DataQualifier, value);
-        expectGetEmpty("row2", 3L);
-        checkNoReadTimestamp("row2", 3L);
+        TestUtil.put(conf, tableName, "row1", 3L, family, Constants.DataQualifier, value);
+        checkNoReadTimestamp("row1", 3L);
         // expect write a (RT: 4L) in version 3L
-        expectGet("row2", 4L, Bytes.toBytes(value), 3L, true);
-        checkReadTimestamp("row2", 3L, 4L);
+        expectGet("row1", 4L, Bytes.toBytes(value), 3L, true);
+        checkReadTimestamp("row1", 3L, 4L);
 
         // TestUtil.DeleteTable(conf, tableName, family);
     }
 
     @Test
     void getFromMultiVersions() throws ExecutionException, InterruptedException, IOException {
-        TestUtil.DeleteTable(conf, tableName, family);
+        TestUtil.DeleteTable(conf, tableName);
         TestUtil.CreateTable(conf, tableName, family);
 
         String row = "row100";
@@ -129,7 +128,7 @@ class GetEndpointTest {
 
     @Test
     void multiGetOnTheSameData() throws ExecutionException, InterruptedException, IOException {
-        TestUtil.DeleteTable(conf, tableName, family);
+        TestUtil.DeleteTable(conf, tableName);
         TestUtil.CreateTable(conf, tableName, family);
 
         // version 20
@@ -180,7 +179,7 @@ class GetEndpointTest {
 
     @Test
     void randomGet() throws ExecutionException, InterruptedException, IOException {
-        TestUtil.DeleteTable(conf, tableName, family);
+        TestUtil.DeleteTable(conf, tableName);
         TestUtil.CreateTable(conf, tableName, family);
 
         String row = "row100";

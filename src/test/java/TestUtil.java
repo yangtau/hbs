@@ -28,17 +28,21 @@ final class TestUtil {
         }
     }
 
-    public static void DeleteTable(Configuration conf, String name, String family)
+    public static void DeleteTable(Configuration conf, String name)
             throws InterruptedException, ExecutionException, IOException {
         TableName tableName = TableName.valueOf(name);
-        byte[] familyBytes = Bytes.toBytes(family);
 
         try (AsyncConnection con = ConnectionFactory.createAsyncConnection(conf).get()) {
             AsyncAdmin admin = con.getAdmin();
 
-            // delete 'test'
-            admin.disableTable(tableName).get();
-            admin.deleteTable(tableName).get();
+            var list = admin.listTableNames().get();
+            for (var t : list) {
+                if (t.getNameAsString().equals(name)) {
+                    // delete 'test'
+                    admin.disableTable(tableName).get();
+                    admin.deleteTable(tableName).get();
+                }
+            }
         }
     }
 

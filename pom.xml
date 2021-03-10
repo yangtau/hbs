@@ -41,6 +41,7 @@
                     <minimizeJar>true</minimizeJar>
                     <artifactSet>
                         <excludes>
+                            <exclude>junit:junit</exclude>
                             <exclude>org.apache.*</exclude>
                             <exclude>org.slf4j:*</exclude>
                             <exclude>org.jruby.*</exclude>
