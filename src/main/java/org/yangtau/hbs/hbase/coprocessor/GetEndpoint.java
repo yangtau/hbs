@@ -73,7 +73,6 @@ public class GetEndpoint extends GetProtos.GetService implements HBSCoprocessor 
     @Override
     public void get(RpcController controller, GetProtos.GetRequest request, RpcCallback<GetProtos.GetResponse> done) {
         Region region = env.getRegion();
-        GetProtos.GetResponse.Builder rsp = GetProtos.GetResponse.newBuilder().setError(false).setCommitted(true);
         byte[] row = request.getRow().toByteArray();
         byte[] family = request.getColumn().toByteArray();
         long requestTs = request.getTimestamp();
@@ -81,6 +80,8 @@ public class GetEndpoint extends GetProtos.GetService implements HBSCoprocessor 
         // RT and WT for the data cell to be read
         long readTs = -1;
         long writeTs = -1;
+        byte[] data = null;
+        boolean committed = true;
 
         try {
             Get get = new Get(row)
@@ -94,19 +95,19 @@ public class GetEndpoint extends GetProtos.GetService implements HBSCoprocessor 
                 for (Cell c : region.get(get, false)) {
                     byte[] qualifier = c.getQualifierArray();
                     byte[] value = c.getValueArray();
-                    if (Arrays.equals(qualifier, Constants.ReadTimestampQualifierBytes))
+                    if (Arrays.equals(qualifier, Constants.ReadTimestampQualifierBytes)) {
                         readTs = Bytes.toLong(value);
-                    else if (Arrays.equals(qualifier, Constants.DataQualifierBytes))
-                        rsp.setValue(ByteString.copyFrom(value));
-                    else if (Arrays.equals(qualifier, Constants.CommitQualifierBytes))
-                        rsp.setCommitted(false);
-                    writeTs = c.getTimestamp();
+                    } else if (Arrays.equals(qualifier, Constants.DataQualifierBytes)) {
+                        data = value;
+                        writeTs = c.getTimestamp();  // read the version of this data cell
+                    } else if (Arrays.equals(qualifier, Constants.CommitQualifierBytes)) {
+                        committed = false;
+                    }
                 }
-                rsp.setTimestamp(writeTs); // version of the data gotten, thus the writeTimestamp
 
-                // read something, and this read has bigger readTs than what has been recorded (readTs)
-                // put(col: "$family:@RT", value: txnTs, version: writeTs)
-                if (readTs < requestTs && rsp.hasValue()) {
+                // read something, and this read has greater Ts than what has been recorded (readTs)
+                // put(col: "$family:@RT", value: Ts, version: writeTs)
+                if (readTs < requestTs && data != null) {
                     Put put = new Put(row, writeTs)
                             .addColumn(family, Constants.ReadTimestampQualifierBytes, Bytes.toBytes(requestTs));
                     region.put(put);
@@ -116,9 +117,15 @@ public class GetEndpoint extends GetProtos.GetService implements HBSCoprocessor 
             }
 
             // do callback after releasing locks
+            var rsp = GetProtos.GetResponse.newBuilder().setError(false);
+            if (data != null) {
+                rsp.setCommitted(committed)
+                        .setTimestamp(writeTs) // version of the data gotten, thus the writeTimestamp
+                        .setValue(ByteString.copyFrom(data));
+            }
             done.run(rsp.build());
         } catch (IOException e) {
-            done.run(rsp
+            done.run(GetProtos.GetResponse.newBuilder()
                     .setError(true)
                     .setErrorMsg(e.toString())
                     .build());
