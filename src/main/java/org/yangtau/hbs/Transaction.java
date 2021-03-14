@@ -1,4 +1,5 @@
 package org.yangtau.hbs;
 
-public class Result {
+class Transaction {
+
 }

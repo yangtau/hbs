@@ -1,4 +1,4 @@
-package org.yangtau.hbs;
+package org.yangtau.hbs.hbase.coprocessor;
 
 import org.apache.hadoop.hbase.util.Bytes;
 
@@ -12,9 +12,8 @@ final public class Constants {
     public static final byte[] ReadTimestampQualifierBytes = Bytes.toBytes(ReadTimestampQualifier);
 
     // the column "$col:@C" indicates whether the data cell has been committed
-    // "$col:@C" == "" means that the data cells has been committed
-    // "$col:@C" == "$ts" means that the data cells has not been committed, and the txn's id is $ts
+    // "$col:@C" == "" means that the data cells has not been committed
+    // the nonexistence of "$col:@C" means that the data cells has been committed
     public static final String CommitQualifier = "@C";
     public static final byte[] CommitQualifierBytes = Bytes.toBytes(CommitQualifier);
-
 }

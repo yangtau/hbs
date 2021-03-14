@@ -1,2 +1,4 @@
-package org.yangtau.hbs;public class CommitTable {
+package org.yangtau.hbs;
+
+public class CommitTable {
 }
