@@ -1,8 +1,5 @@
 package org.yangtau.hbs;
 
-import java.io.IOException;
-import java.util.concurrent.CompletableFuture;
-
 public interface TransactionManager extends AutoCloseable {
     // allocate a timestamp, and record it in the TM server (e.g. Zookeeper)
     long allocate() throws Exception;

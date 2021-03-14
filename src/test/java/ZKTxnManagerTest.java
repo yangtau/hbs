@@ -11,14 +11,17 @@ class ZKTxnManagerTest {
     public static final String connectString = "127.0.0.1";
 
 
-    void removeParentNode() throws Exception {
+    void clearParentNode() throws Exception {
         try (
                 var client = CuratorFrameworkFactory
                         .newClient(connectString, new RetryForever(100))) {
             client.start();
-            if (client.checkExists().forPath("/" + ZKTransactionManager.ZKParentPath) != null)
+            if (client.checkExists().forPath("/" + ZKTransactionManager.ZKParentPath) != null) {
                 client.delete().forPath("/" + ZKTransactionManager.ZKParentPath);
+                ZKTransactionManager.createParentNode(connectString);
+            }
         }
+
     }
 
     boolean exists(long id) throws Exception {
@@ -34,7 +37,7 @@ class ZKTxnManagerTest {
 
     @Test
     void createTxnIdTest() throws Exception {
-        removeParentNode();
+        clearParentNode();
 
         var len = 10;
 
@@ -46,8 +49,7 @@ class ZKTxnManagerTest {
         }
 
         // check that txns are removed after manager closed
-        try (TransactionManager manager = new ZKTransactionManager(connectString)
-        ) {
+        try (TransactionManager manager = new ZKTransactionManager(connectString)) {
             for (long i = 0; i < len; i++) {
                 assertFalse(exists(i));
                 assertFalse(manager.exists(i));
@@ -57,23 +59,26 @@ class ZKTxnManagerTest {
 
     @Test
     void releaseTxnIdTest() throws Exception {
-        removeParentNode();
+        clearParentNode();
         TransactionManager manager = new ZKTransactionManager(connectString);
 
         var txn1 = manager.allocate();
         var txn2 = manager.allocate();
 
+        // explicitly release
         manager.release(txn1);
 
         assertTrue(manager.exists(txn2));
         assertFalse(manager.exists(txn1));
 
+        // release txn by close manager
         manager.close();
+        assertFalse(manager.exists(txn2));
     }
 
     @Test
     void waitIfExists1Test() throws Exception {
-        removeParentNode();
+        clearParentNode();
         TransactionManager manager = new ZKTransactionManager(connectString);
 
         final long txn1 = manager.allocate();
@@ -104,7 +109,7 @@ class ZKTxnManagerTest {
 
     @Test
     void waitIfExists2Test() throws Exception {
-        removeParentNode();
+        clearParentNode();
         TransactionManager manager = new ZKTransactionManager(connectString);
 
         final long txn1 = manager.allocate();
@@ -133,7 +138,7 @@ class ZKTxnManagerTest {
 
     @Test
     void waitIfExists3Test() throws Exception {
-        removeParentNode();
+        clearParentNode();
         TransactionManager manager = new ZKTransactionManager(connectString);
 
         final long txn1 = manager.allocate();

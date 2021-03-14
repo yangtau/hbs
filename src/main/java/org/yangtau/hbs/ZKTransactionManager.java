@@ -1,5 +1,6 @@
 package org.yangtau.hbs;
 
+import org.apache.curator.RetryPolicy;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.framework.api.CuratorWatcher;
@@ -15,6 +16,7 @@ public class ZKTransactionManager implements TransactionManager {
     the counter used to store the next sequence number is a signed int (4bytes) maintained by the parent node
      */
     private static final String ZKCounterFormat = "%010d";
+    private static final RetryPolicy retryPolicy = new RetryUntilElapsed(5000, 100);
 
     CuratorFramework client;
 
@@ -23,10 +25,17 @@ public class ZKTransactionManager implements TransactionManager {
         client = CuratorFrameworkFactory.builder()
                 .namespace(ZKParentPath)
                 .connectString(connectionStrings)
-                .retryPolicy(new RetryUntilElapsed(5000, 100))
+                .retryPolicy(retryPolicy)
                 .build();
 
         client.start();
+    }
+
+    public static void createParentNode(String connectionStrings) throws Exception {
+        try (var client = CuratorFrameworkFactory.newClient(connectionStrings, retryPolicy)) {
+            client.start();
+            client.create().forPath("/" + ZKParentPath);
+        }
     }
 
     // converts txn path in zookeeper to txn id
@@ -50,7 +59,6 @@ public class ZKTransactionManager implements TransactionManager {
     @Override
     public long allocate() throws Exception {
         var res = client.create()
-                .creatingParentsIfNeeded()
                 .withMode(CreateMode.EPHEMERAL_SEQUENTIAL)
                 .forPath(ZKPrefix);
         return parseTxnId(res);
