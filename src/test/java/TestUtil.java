@@ -41,6 +41,7 @@ final class TestUtil {
                     // delete 'test'
                     admin.disableTable(tableName).get();
                     admin.deleteTable(tableName).get();
+                    break;
                 }
             }
         }
