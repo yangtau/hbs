@@ -6,13 +6,14 @@ import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.jupiter.api.Test;
 import org.yangtau.hbs.CommitTable;
-import org.yangtau.hbs.HBaseCommitTable;
+import org.yangtau.hbs.hbase.HBaseCommitTable;
 
 import java.util.HashSet;
 import java.util.Random;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class HBaseCommitTableTest {
     private final Configuration conf = HBaseConfiguration.create();

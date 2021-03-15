@@ -1,9 +1,10 @@
-package org.yangtau.hbs;
+package org.yangtau.hbs.hbase;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.yangtau.hbs.CommitTable;
 
 import java.io.IOException;
 

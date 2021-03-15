@@ -1,4 +1,4 @@
-package org.yangtau.hbs;
+package org.yangtau.hbs.zookeeper;
 
 import org.apache.curator.RetryPolicy;
 import org.apache.curator.framework.CuratorFramework;
@@ -7,6 +7,7 @@ import org.apache.curator.framework.api.CuratorWatcher;
 import org.apache.curator.retry.RetryUntilElapsed;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.Watcher;
+import org.yangtau.hbs.TransactionManager;
 
 public class ZKTransactionManager implements TransactionManager {
     public static final String ZKParentPath = "hbs";

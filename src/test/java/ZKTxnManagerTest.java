@@ -2,14 +2,12 @@ import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.RetryForever;
 import org.junit.jupiter.api.Test;
 import org.yangtau.hbs.TransactionManager;
-import org.yangtau.hbs.ZKTransactionManager;
+import org.yangtau.hbs.zookeeper.ZKTransactionManager;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class ZKTxnManagerTest {
-
     public static final String connectString = "127.0.0.1";
-
 
     void clearParentNode() throws Exception {
         try (
@@ -73,7 +71,7 @@ class ZKTxnManagerTest {
 
         // release txn by close manager
         manager.close();
-        assertFalse(manager.exists(txn2));
+        assertFalse(exists(txn2));
     }
 
     @Test
