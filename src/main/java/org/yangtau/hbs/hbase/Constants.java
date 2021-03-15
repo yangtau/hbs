@@ -1,4 +1,4 @@
-package org.yangtau.hbs.hbase.coprocessor;
+package org.yangtau.hbs.hbase;
 
 import org.apache.hadoop.hbase.util.Bytes;
 
