@@ -1,14 +1,14 @@
 package org.yangtau.hbs;
 
-import java.io.Closeable;
+import java.util.concurrent.CompletableFuture;
 
 // A txn will be written in the CommitTable only if it's first phase successes.
 // The point a txn is written in the CommitTable can be viewed as the commit point.
 // That is to say, after this point, the mutation of the txn is visible to other txns.
-public interface CommitTable extends Closeable {
-    void commit(long id) throws Exception;
+public interface CommitTable {
+    CompletableFuture<Void> commit(long id);
 
-    boolean exists(long id) throws Exception;
+    CompletableFuture<Boolean> exists(long id);
 
-    void drop(long id) throws Exception;
+    CompletableFuture<Void> drop(long id);
 }
