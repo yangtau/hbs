@@ -1,6 +1,7 @@
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.client.AsyncConnection;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -20,20 +21,20 @@ class HBaseCommitTableTest {
 
     @Test
     void commitTest() throws Exception {
-        TestUtil.DeleteTable(conf, HBaseCommitTable.COMMIT_TABLE);
-        HBaseCommitTable.createCommitTable(conf);
+        try (AsyncConnection conn = ConnectionFactory.createAsyncConnection(conf).get()) {
+            TestUtil.DeleteTable(conn, HBaseCommitTable.COMMIT_TABLE);
+            HBaseCommitTable.createCommitTable(conn).get();
 
-        var random = new Random();
+            var random = new Random();
 
-        try (CommitTable commitTable = new HBaseCommitTable(conf);
-             var table = ConnectionFactory.createConnection(conf)
-                     .getTable(TableName.valueOf(HBaseCommitTable.COMMIT_TABLE))) {
+            CommitTable commitTable = new HBaseCommitTable(conn);
+            var table = conn.getTable(TableName.valueOf(HBaseCommitTable.COMMIT_TABLE));
 
             for (int i = 0; i < 100; i++) {
                 var id = random.nextLong();
-                commitTable.commit(id);
-                assertTrue(table.exists(new Get(Bytes.toBytes(id))));
-                assertTrue(commitTable.exists(id));
+                commitTable.commit(id).get();
+                assertTrue(table.exists(new Get(Bytes.toBytes(id))).get());
+                assertTrue(commitTable.exists(id).get());
             }
         }
     }
@@ -41,30 +42,30 @@ class HBaseCommitTableTest {
 
     @Test
     void dropTest() throws Exception {
-        TestUtil.DeleteTable(conf, HBaseCommitTable.COMMIT_TABLE);
-        HBaseCommitTable.createCommitTable(conf);
+        try (AsyncConnection conn = ConnectionFactory.createAsyncConnection(conf).get()) {
+            TestUtil.DeleteTable(conn, HBaseCommitTable.COMMIT_TABLE);
+            HBaseCommitTable.createCommitTable(conn).get();
 
-        var random = new Random();
-        Set<Long> txns = new HashSet<>();
-        int length = 100;
+            var random = new Random();
+            Set<Long> txns = new HashSet<>();
+            int length = 100;
 
-        try (CommitTable commitTable = new HBaseCommitTable(conf);
-             var table = ConnectionFactory.createConnection()
-                     .getTable(TableName.valueOf(HBaseCommitTable.COMMIT_TABLE))) {
+            CommitTable commitTable = new HBaseCommitTable(conn);
+            var table = conn.getTable(TableName.valueOf(HBaseCommitTable.COMMIT_TABLE));
 
             for (int i = 0; i < length; i++) {
                 var id = random.nextLong();
                 if (txns.contains(id)) continue;
 
                 txns.add(id);
-                commitTable.commit(id);
-                assertTrue(table.exists(new Get(Bytes.toBytes(id))));
+                commitTable.commit(id).get();
+                assertTrue(table.exists(new Get(Bytes.toBytes(id))).get());
             }
 
             for (var id : txns) {
-                assertTrue(commitTable.exists(id));
-                commitTable.drop(id);
-                assertFalse(table.exists(new Get(Bytes.toBytes(id))));
+                assertTrue(commitTable.exists(id).get());
+                commitTable.drop(id).get();
+                assertFalse(table.exists(new Get(Bytes.toBytes(id))).get());
             }
         }
     }
