@@ -26,7 +26,7 @@ class GetEndpointTest extends EndpointTest {
             // Read uncommitted
             // get with a small timestamp, no RT should be written
             put(conn, "row1", 1L, Constants.DataQualifier, value);
-            put(conn, "row1", 1L, Constants.CommitQualifier, "");
+            put(conn, "row1", 1L, Constants.UncommittedQualifier, "");
             checkNoReadTimestamp(conn, "row1", 1L);
             // nothing should be read
             expectGetEmpty(s, "row1", 1L);

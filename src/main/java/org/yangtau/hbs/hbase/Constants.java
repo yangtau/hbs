@@ -14,6 +14,6 @@ final public class Constants {
     // the column "$col:@C" indicates whether the data cell has been committed
     // "$col:@C" == "" means that the data cells has not been committed
     // the nonexistence of "$col:@C" means that the data cells has been committed
-    public static final String CommitQualifier = "@C";
-    public static final byte[] CommitQualifierBytes = Bytes.toBytes(CommitQualifier);
+    public static final String UncommittedQualifier = "@C";
+    public static final byte[] UncommittedQualifierBytes = Bytes.toBytes(UncommittedQualifier);
 }
