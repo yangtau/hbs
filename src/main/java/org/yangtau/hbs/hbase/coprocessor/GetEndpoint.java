@@ -97,7 +97,7 @@ public class GetEndpoint extends GetProtos.GetService implements HBSCoprocessor 
 
                     // Read @C & @RT only if there is data cell
                     // Committed Flag
-                    var commitCell = res.getColumnLatestCell(family, Constants.CommitQualifierBytes);
+                    var commitCell = res.getColumnLatestCell(family, Constants.UncommittedQualifierBytes);
                     if (commitCell != null && commitCell.getTimestamp() == writeTs)
                         committed = false;
 

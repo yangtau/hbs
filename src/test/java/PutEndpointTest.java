@@ -24,7 +24,7 @@ class PutEndpointTest extends EndpointTest {
         assertTrue(Arrays.equals(res.getValue(Bytes.toBytes(family), Constants.DataQualifierBytes),
                 Bytes.toBytes(value)));
 
-        boolean c = !res.containsColumn(Bytes.toBytes(family), Constants.CommitQualifierBytes);
+        boolean c = !res.containsColumn(Bytes.toBytes(family), Constants.UncommittedQualifierBytes);
         assertEquals(committed, c);
     }
 

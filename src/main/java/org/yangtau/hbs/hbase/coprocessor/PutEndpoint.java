@@ -84,7 +84,7 @@ public class PutEndpoint extends PutProtos.PutService implements HBSCoprocessor 
                     .readVersions(1);
             Put put = new Put(row, requestTs)
                     .addColumn(family, Constants.DataQualifierBytes, value)
-                    .addColumn(family, Constants.CommitQualifierBytes, Bytes.toBytes(""));
+                    .addColumn(family, Constants.UncommittedQualifierBytes, Bytes.toBytes(""));
 
             Region.RowLock lock = getLock(region, row);
             try {
