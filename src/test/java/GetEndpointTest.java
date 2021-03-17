@@ -1,13 +1,10 @@
 import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.jupiter.api.Test;
-import org.yangtau.hbs.Storage;
 import org.yangtau.hbs.hbase.Constants;
-import org.yangtau.hbs.hbase.HBaseStorage;
 
 import java.io.IOException;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ExecutionException;
@@ -17,39 +14,37 @@ class GetEndpointTest extends EndpointTest {
     @Test
     void getCommittedAndUncommitted() throws ExecutionException, InterruptedException, IOException {
         try (var conn = ConnectionFactory.createAsyncConnection(conf).get()) {
-            Storage s = new HBaseStorage(conn);
-            s.removeTable(tableName).get();
-            s.createTable(tableName, List.of(Bytes.toBytes(family)), true).get();
+            deleteTable(conn);
+            createTable(conn);
 
             var value = "hello";
 
             // Read uncommitted
             // get with a small timestamp, no RT should be written
-            put(conn, "row1", 1L, Constants.DataQualifier, value);
-            put(conn, "row1", 1L, Constants.UncommittedQualifier, "");
-            checkNoReadTimestamp(conn, "row1", 1L);
+            put(conn, "row1", 1L, Constants.DATA_QUALIFIER, value);
+            put(conn, "row1", 1L, Constants.UNCOMMITTED_QUALIFIER, "");
+            checkReadTimestamp(conn, "row1", 1L);
             // nothing should be read
-            expectGetEmpty(s, "row1", 1L);
-            checkNoReadTimestamp(conn, "row1", 1L);
+            expectEndpointGet(conn, "row1", 1L);
+            checkReadTimestamp(conn, "row1", 1L);
             // expect write a (RT: 2L) in version 1L
-            expectGet(s, "row1", 2L, Bytes.toBytes(value), 1L, false);
+            expectEndpointGet(conn, "row1", 2L, Bytes.toBytes(value), 1L, false);
             checkReadTimestamp(conn, "row1", 1L, 2L);
 
             // Read committed
-            put(conn, "row1", 3L, Constants.DataQualifier, value);
-            checkNoReadTimestamp(conn, "row1", 3L);
+            put(conn, "row1", 3L, Constants.DATA_QUALIFIER, value);
+            checkReadTimestamp(conn, "row1", 3L);
             // expect write a (RT: 4L) in version 3L
-            expectGet(s, "row1", 4L, Bytes.toBytes(value), 3L, true);
+            expectEndpointGet(conn, "row1", 4L, Bytes.toBytes(value), 3L, true);
             checkReadTimestamp(conn, "row1", 3L, 4L);
         }
     }
 
     @Test
-    void getFromMultiVersions() throws ExecutionException, InterruptedException, IOException {
+    void getInMultiVersions() throws ExecutionException, InterruptedException, IOException {
         try (var conn = ConnectionFactory.createAsyncConnection(conf).get()) {
-            Storage s = new HBaseStorage(conn);
-            s.removeTable(tableName).get();
-            s.createTable(tableName, List.of(Bytes.toBytes(family)), true).get();
+            deleteTable(conn);
+            createTable(conn);
 
             String row = "row100";
             long length = 20;
@@ -59,7 +54,7 @@ class GetEndpointTest extends EndpointTest {
             for (long i = 0L; i < length; i += 3L) {
                 var ts = Math.abs(random.nextLong()) % length;
                 var value = random.nextDouble() + "";
-                put(conn, row, ts, Constants.DataQualifier, value);
+                put(conn, row, ts, Constants.DATA_QUALIFIER, value);
                 versionToValue.put(ts, Bytes.toBytes(value));
             }
 
@@ -71,42 +66,41 @@ class GetEndpointTest extends EndpointTest {
                         .max((e1, e2) -> (int) (e1.getKey() - e2.getKey()));
 
                 if (opt.isEmpty()) {
-                    expectGetEmpty(s, row, ts);
+                    expectEndpointGet(conn, row, ts);
                 } else {
-                    expectGet(s, row, ts, opt.get().getValue(), opt.get().getKey(), true);
+                    expectEndpointGet(conn, row, ts, opt.get().getValue(), opt.get().getKey(), true);
                 }
             }
         }
     }
 
     @Test
-    void multiGetOnTheSameData() throws ExecutionException, InterruptedException, IOException {
+    void multiGetOnSingleRow() throws ExecutionException, InterruptedException, IOException {
         try (var conn = ConnectionFactory.createAsyncConnection(conf).get()) {
-            Storage s = new HBaseStorage(conn);
-            s.removeTable(tableName).get();
-            s.createTable(tableName, List.of(Bytes.toBytes(family)), true).get();
+            deleteTable(conn);
+            createTable(conn);
 
             // version 20
             String row = "favorite programming language";
             String value20 = "hedgehog";
             long writeTs20 = 20L;
-            put(conn, row, writeTs20, Constants.DataQualifier, value20);
+            put(conn, row, writeTs20, Constants.DATA_QUALIFIER, value20);
 
             // version 15
             String value15 = "lisp";
             long writeTs15 = 15L;
-            put(conn, row, writeTs15, Constants.DataQualifier, value15);
+            put(conn, row, writeTs15, Constants.DATA_QUALIFIER, value15);
 
-            checkNoReadTimestamp(conn, row, writeTs15);
-            checkNoReadTimestamp(conn, row, writeTs20);
+            checkReadTimestamp(conn, row, writeTs15);
+            checkReadTimestamp(conn, row, writeTs20);
 
             // case 1: no RT before
             {
                 // get version 15
-                expectGet(s, row, 20, Bytes.toBytes(value15), 15, true);
+                expectEndpointGet(conn, row, 20, Bytes.toBytes(value15), 15, true);
                 checkReadTimestamp(conn, row, 15, 20);
                 // get version 20
-                expectGet(s, row, 30, Bytes.toBytes(value20), 20, true);
+                expectEndpointGet(conn, row, 30, Bytes.toBytes(value20), 20, true);
                 checkReadTimestamp(conn, row, 20, 30);
             }
             // case 2: smaller RT than current one
@@ -115,10 +109,10 @@ class GetEndpointTest extends EndpointTest {
             // 15  20
             {
                 // get version 15
-                expectGet(s, row, 19, Bytes.toBytes(value15), 15, true);
+                expectEndpointGet(conn, row, 19, Bytes.toBytes(value15), 15, true);
                 checkReadTimestamp(conn, row, 15, 20);
                 // get version 20
-                expectGet(s, row, 21, Bytes.toBytes(value20), 20, true);
+                expectEndpointGet(conn, row, 21, Bytes.toBytes(value20), 20, true);
                 checkReadTimestamp(conn, row, 20, 30);
             }
             // case 3: bigger RT than current one
@@ -127,7 +121,7 @@ class GetEndpointTest extends EndpointTest {
             // 15  20
             {
                 // get version 20
-                expectGet(s, row, 31, Bytes.toBytes(value20), 20, true);
+                expectEndpointGet(conn, row, 31, Bytes.toBytes(value20), 20, true);
                 checkReadTimestamp(conn, row, 20, 31);
             }
         }
@@ -136,9 +130,8 @@ class GetEndpointTest extends EndpointTest {
     @Test
     void randomGet() throws ExecutionException, InterruptedException, IOException {
         try (var conn = ConnectionFactory.createAsyncConnection(conf).get()) {
-            Storage s = new HBaseStorage(conn);
-            s.removeTable(tableName).get();
-            s.createTable(tableName, List.of(Bytes.toBytes(family)), true).get();
+            deleteTable(conn);
+            createTable(conn);
 
 
             String row = "row100";
@@ -151,7 +144,7 @@ class GetEndpointTest extends EndpointTest {
             for (long i = 0L; i < maxTs; i += 3L) {
                 var ts = Math.abs(random.nextLong()) % maxTs;
                 var value = random.nextDouble() + "";
-                put(conn, row, ts, Constants.DataQualifier, value);
+                put(conn, row, ts, Constants.DATA_QUALIFIER, value);
                 versionToValue.put(ts, Bytes.toBytes(value));
             }
 
@@ -165,7 +158,7 @@ class GetEndpointTest extends EndpointTest {
                         .max((e1, e2) -> (int) (e1.getKey() - e2.getKey()));
                 if (opt.isEmpty()) {
                     // nothing can be read, the timestamp is too small
-                    expectGetEmpty(s, row, ts);
+                    expectEndpointGet(conn, row, ts);
                 } else {
                     var writeTs = opt.get().getKey();
                     var value = opt.get().getValue();
@@ -173,10 +166,10 @@ class GetEndpointTest extends EndpointTest {
                     // check RT before Get
                     if (!maxRts.containsKey(writeTs)) {
                         // no read on this version before
-                        checkNoReadTimestamp(conn, row, writeTs);
+                        checkReadTimestamp(conn, row, writeTs);
                     }
 
-                    expectGet(s, row, ts, value, writeTs, true);
+                    expectEndpointGet(conn, row, ts, value, writeTs, true);
                     if (!maxRts.containsKey(writeTs)) {
                         // no read on this version before
                         maxRts.put(writeTs, ts);

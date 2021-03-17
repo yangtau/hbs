@@ -35,16 +35,10 @@ public class GetEndpoint extends GetProtos.GetService implements HBSCoprocessor 
         return runAsync(asyncTable, row, request);
     }
 
-    @Deprecated
-    static public CompletableFuture<GetProtos.GetResponse> runAsync(
-            AsyncConnection conn, String table, GetProtos.GetRequest request) {
-        return runAsync(conn, table, request.getRow().toByteArray(), request);
-    }
-
     @Override
     public void start(CoprocessorEnvironment env) throws IOException {
-        if (env instanceof RegionCoprocessorEnvironment regionCoprocessorEnvironment)
-            this.env = regionCoprocessorEnvironment;
+        if (env instanceof RegionCoprocessorEnvironment)
+            this.env = (RegionCoprocessorEnvironment) env;
         else
             throw new CoprocessorException("Must be loaded on a table region!");
     }
@@ -90,28 +84,28 @@ public class GetEndpoint extends GetProtos.GetService implements HBSCoprocessor 
                 var res = region.get(get);
 
                 // Data
-                var dataCell = res.getColumnLatestCell(family, Constants.DataQualifierBytes);
+                var dataCell = res.getColumnLatestCell(family, Constants.DATA_QUALIFIER_BYTES);
                 if (dataCell != null) {
                     data = dataCell.getValueArray();
                     writeTs = dataCell.getTimestamp();
 
                     // Read @C & @RT only if there is data cell
                     // Committed Flag
-                    var commitCell = res.getColumnLatestCell(family, Constants.UncommittedQualifierBytes);
+                    var commitCell = res.getColumnLatestCell(family, Constants.UNCOMMITTED_QUALIFIER_BYTES);
                     if (commitCell != null && commitCell.getTimestamp() == writeTs)
                         committed = false;
 
                     // RT
-                    var rtCell = res.getColumnLatestCell(family, Constants.ReadTimestampQualifierBytes);
+                    var rtCell = res.getColumnLatestCell(family, Constants.READ_TIMESTAMP_QUALIFIER_BYTES);
                     if (rtCell != null && rtCell.getTimestamp() == writeTs)
                         readTs = Bytes.toLong(rtCell.getValueArray());
                 }
 
                 // this GET has greater Ts than what has been recorded (readTs)
-                // put(col: "$family:@RT", value: Ts, version: writeTs)
+                // put(column: "$family:@RT", value: Ts, version: writeTs)
                 if (readTs < requestTs && dataCell != null)
                     region.put(new Put(row, writeTs)
-                            .addColumn(family, Constants.ReadTimestampQualifierBytes, Bytes.toBytes(requestTs)));
+                            .addColumn(family, Constants.READ_TIMESTAMP_QUALIFIER_BYTES, Bytes.toBytes(requestTs)));
             } finally {
                 releaseLock(region, lock);
             }
