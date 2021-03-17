@@ -152,6 +152,9 @@ public class StorageTest {
                 assertFalse(exists(conn,  k, ts));
             }
 
+            // repeated remove
+            s.removeCells(map.keySet(), ts).get();
+
             s.removeTable(table1).get();
             s.removeTable(table2).get();
         }

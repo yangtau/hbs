@@ -75,7 +75,7 @@ class ZKTxnManagerTest {
     }
 
     @Test
-    void waitIfExists1Test() throws Exception {
+    void waitIfExists() throws Exception {
         clearParentNode();
         TransactionManager manager = new ZKTransactionManager(connectString);
 
@@ -96,6 +96,8 @@ class ZKTxnManagerTest {
         );
 
         t.start();
+
+        Thread.sleep(2000);
 
         // release txn1
         manager.release(txn1);
@@ -105,37 +107,9 @@ class ZKTxnManagerTest {
         t.join();
     }
 
-    @Test
-    void waitIfExists2Test() throws Exception {
-        clearParentNode();
-        TransactionManager manager = new ZKTransactionManager(connectString);
-
-        final long txn1 = manager.allocate();
-
-        var t = new Thread(
-                () -> {
-                    // wait for txn1
-                    TransactionManager txnManager = new ZKTransactionManager(connectString);
-                    try {
-                        txnManager.waitIfExists(txn1);
-                        assertFalse(exists(txn1));
-                        txnManager.close();
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                }
-        );
-
-        t.start();
-
-        manager.close();
-
-        // wait for t
-        t.join();
-    }
 
     @Test
-    void waitIfExists3Test() throws Exception {
+    void waitForever() throws Exception {
         clearParentNode();
         TransactionManager manager = new ZKTransactionManager(connectString);
 
@@ -161,9 +135,33 @@ class ZKTxnManagerTest {
         );
 
         t.start();
+        Thread.sleep(2000);
 
         t.interrupt();
+
         t.join();
         manager.close();
+    }
+
+    @Test
+    void waitIfNotExist() throws Exception {
+        clearParentNode();
+
+        final long txn1 = 0;
+        var t = new Thread(
+                () -> {
+                    try {
+                        TransactionManager txnManager = new ZKTransactionManager(connectString);
+                        // should not wait
+                        txnManager.waitIfExists(txn1);
+                        assertFalse(txnManager.exists(txn1));
+                        txnManager.close();
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+        );
+        t.start();
+        t.join();
     }
 }

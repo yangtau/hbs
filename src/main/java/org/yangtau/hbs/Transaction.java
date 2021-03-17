@@ -1,6 +1,5 @@
 package org.yangtau.hbs;
 
-// TODO: async API
 public interface Transaction {
     long getTimestamp();
 
