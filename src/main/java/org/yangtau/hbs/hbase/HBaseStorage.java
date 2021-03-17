@@ -77,6 +77,11 @@ public class HBaseStorage implements MVCCStorage {
         return getTable(table).deleteAll(delete);
     }
 
+    private CompletableFuture<Boolean> checkAndMutate(String table, CheckAndMutate checkAndMutate) {
+        return getTable(table).checkAndMutate(checkAndMutate)
+                .thenApplyAsync(CheckAndMutateResult::isSuccess);
+    }
+
     // remove cells in multi tables, multi rows
     private CompletableFuture<Void> removeAllMultiTable(Collection<KeyValue.Key> keys,
                                                         Function<KeyValue.Key, Delete> deleteCreator) {
@@ -117,6 +122,16 @@ public class HBaseStorage implements MVCCStorage {
     public CompletableFuture<Void> remove(KeyValue.Key key) {
         var delete = new Delete(key.row()).addColumn(key.column(), Constants.DATA_QUALIFIER_BYTES);
         return remove(key.table(), delete);
+    }
+
+    @Override
+    public CompletableFuture<Boolean> putIfNotExists(KeyValue.Key key, byte[] value) {
+        var put = new Put(key.row())
+                .addColumn(key.column(), Constants.DATA_QUALIFIER_BYTES, value);
+        var checkAndMutate = CheckAndMutate.newBuilder(key.row())
+                .ifNotExists(key.column(), Constants.DATA_QUALIFIER_BYTES)
+                .build(put);
+        return checkAndMutate(key.table(), checkAndMutate);
     }
 
     @Override

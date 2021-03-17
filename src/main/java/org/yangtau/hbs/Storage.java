@@ -19,7 +19,9 @@ public interface Storage {
     // check if `(row, column)` exists with any timestamp
     CompletableFuture<Boolean> exists(KeyValue.Key key);
 
-
     // delete all `(row, column)`
     CompletableFuture<Void> remove(KeyValue.Key key);
+
+    // put if the `key` not exists
+    CompletableFuture<Boolean> putIfNotExists(KeyValue.Key key, byte[] value);
 }
