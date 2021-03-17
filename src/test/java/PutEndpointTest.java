@@ -1,40 +1,23 @@
-import org.apache.hadoop.hbase.client.AsyncConnection;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.jupiter.api.Test;
 import org.yangtau.hbs.Storage;
-import org.yangtau.hbs.hbase.Constants;
 import org.yangtau.hbs.hbase.HBaseStorage;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.ExecutionException;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 class PutEndpointTest extends EndpointTest {
-    final String row = "row";
-
-    boolean put(Storage s, long ts, String value) throws ExecutionException, InterruptedException {
-        return s.putIfNoConflict(tableName, Bytes.toBytes(row), Bytes.toBytes(family), Bytes.toBytes(value), ts).get();
-    }
-
-    void check(AsyncConnection conn, long ts, String value, boolean committed) throws ExecutionException, InterruptedException {
-        var res = get(conn, row, ts);
-        assertTrue(Arrays.equals(res.getValue(Bytes.toBytes(family), Constants.DataQualifierBytes),
-                Bytes.toBytes(value)));
-
-        boolean c = !res.containsColumn(Bytes.toBytes(family), Constants.UncommittedQualifierBytes);
-        assertEquals(committed, c);
-    }
-
+    private final String row = "row";
 
     @Test
-    void putNoConflicts() throws ExecutionException, InterruptedException, IOException {
+    void putWithoutConflicts() throws ExecutionException, InterruptedException, IOException {
         try (var conn = ConnectionFactory.createAsyncConnection(conf).get()) {
-            Storage s = new HBaseStorage(conn);
-            s.removeTable(tableName).get();
-            s.createTable(tableName, List.of(Bytes.toBytes(family)), true).get();
+            deleteTable(conn);
+            createTable(conn);
 
             Map<Long, String> versionToValue = new HashMap<>();
             var random = new Random();
@@ -47,46 +30,46 @@ class PutEndpointTest extends EndpointTest {
 
                 var val = random.nextDouble() + "";
                 versionToValue.put(ts, val);
-                assertTrue(put(s, ts, val));
+                expectEndpointPut(conn, row, ts, val, true);
             }
 
             for (var e : versionToValue.entrySet()) {
-                check(conn, e.getKey(), e.getValue(), false);
+                checkUncommittedPut(conn, row, e.getKey(), e.getValue());
             }
         }
     }
 
     @Test
-    void putConflict() throws ExecutionException, InterruptedException, IOException {
+    void putWithConflicts() throws ExecutionException, InterruptedException, IOException {
         try (var conn = ConnectionFactory.createAsyncConnection(conf).get()) {
-            Storage s = new HBaseStorage(conn);
-            s.removeTable(tableName).get();
-            s.createTable(tableName, List.of(Bytes.toBytes(family)), true).get();
+            deleteTable(conn);
+            createTable(conn);
 
-            assertTrue(put(s, 1, "v1"));
+            // put v1
+            expectEndpointPut(conn, row, 1, "v1", true);
 
             // T2(get, put)
-            expectGet(s, row, 2, Bytes.toBytes("v1"), 1, false);
+            expectEndpointGet(conn, row, 2, Bytes.toBytes("v1"), 1, false);
             // no conflicts in on txn
-            assertTrue(put(s, 2, "v2"));
+            expectEndpointPut(conn, row, 2, "v2", true);
 
             // read version 2
-            expectGet(s, row, 5, Bytes.toBytes("v2"), 2, false);
+            expectEndpointGet(conn, row, 5, Bytes.toBytes("v2"), 2, false);
 
             // try to put version 4
-            assertFalse(put(s, 4, "v4"));
+            expectEndpointPut(conn, row, 4, "v4", false);
 
             // read version 2
-            expectGet(s, row, 3, Bytes.toBytes("v2"), 2, false);
+            expectEndpointGet(conn, row, 3, Bytes.toBytes("v2"), 2, false);
         }
     }
 
     @Test
     void putAndGetRandomly() throws ExecutionException, InterruptedException, IOException {
         try (var conn = ConnectionFactory.createAsyncConnection(conf).get()) {
+            deleteTable(conn);
+            createTable(conn);
             Storage s = new HBaseStorage(conn);
-            s.removeTable(tableName).get();
-            s.createTable(tableName, List.of(Bytes.toBytes(family)), true).get();
 
             Map<Long, String> versionToValue = new HashMap<>();
             Map<Long, Long> maxRts = new HashMap<>();
@@ -102,12 +85,12 @@ class PutEndpointTest extends EndpointTest {
                     // get
                     if (opt.isEmpty()) {
                         // nothing can be read, the timestamp is too small
-                        expectGetEmpty(s, row, ts);
+                        expectEndpointGet(conn, row, ts);
                     } else {
                         var writeTs = opt.get().getKey();
                         var value = opt.get().getValue();
 
-                        expectGet(s, row, ts, Bytes.toBytes(value), writeTs, false);
+                        expectEndpointGet(conn, row, ts, Bytes.toBytes(value), writeTs, false);
                         if (!maxRts.containsKey(writeTs)) {
                             // no read on this version before
                             maxRts.put(writeTs, ts);
@@ -121,10 +104,9 @@ class PutEndpointTest extends EndpointTest {
                     // put
                     var value = random.nextDouble() + "";
                     var conflict = opt.isPresent() && maxRts.getOrDefault(opt.get().getKey(), -1L) > ts;
-                    assertEquals(!conflict, put(s, ts, value), "put timestamp: " + ts);
-                    if (!conflict) {
-                        versionToValue.put(ts, value);
-                    }
+
+                    expectEndpointPut(conn, row, ts, value, !conflict);
+                    if (!conflict) versionToValue.put(ts, value);
                 }
             }
         }

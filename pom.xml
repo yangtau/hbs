@@ -38,7 +38,7 @@
                     </execution>
                 </executions>
                 <configuration>
-                    <minimizeJar>true</minimizeJar>
+<!--                    <minimizeJar>true</minimizeJar>-->
                     <artifactSet>
                         <excludes>
                             <exclude>junit:junit</exclude>
@@ -76,19 +76,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>2.22.0</version>
             </plugin>
-
-            <!-- Use Java 15-->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <source>15</source>
-                    <target>15</target>
-                    <compilerArgs>--enable-preview</compilerArgs>
-                </configuration>
-                <version>3.8.1</version>
-            </plugin>
-        </plugins>
+       </plugins>
     </build>
 
     <dependencies>
@@ -132,6 +120,5 @@
             <version>5.7.1</version>
             <scope>test</scope>
         </dependency>
-    </dependencies>
-
+   </dependencies>
 </project>

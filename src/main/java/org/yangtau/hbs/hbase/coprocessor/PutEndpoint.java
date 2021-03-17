@@ -27,6 +27,7 @@ public class PutEndpoint extends PutProtos.PutService implements HBSCoprocessor 
         return asyncTable.coprocessorService(PutProtos.PutService::newStub, put, row);
     }
 
+    // run Put request on the coprocessor
     static public CompletableFuture<PutProtos.PutResponse> runAsync(
             AsyncConnection conn, String table, byte[] row, PutProtos.PutRequest request) {
         var asyncTable = conn.getTable(TableName.valueOf(table));
@@ -34,18 +35,10 @@ public class PutEndpoint extends PutProtos.PutService implements HBSCoprocessor 
     }
 
 
-    // run Put request on the coprocessor
-    @Deprecated
-    static public CompletableFuture<PutProtos.PutResponse> runAsync(
-            AsyncConnection conn, String table, PutProtos.PutRequest request) {
-        var asyncTable = conn.getTable(TableName.valueOf(table));
-        return runAsync(asyncTable, request.getRow().toByteArray(), request);
-    }
-
     @Override
     public void start(CoprocessorEnvironment env) throws IOException {
-        if (env instanceof RegionCoprocessorEnvironment regionCoprocessorEnvironment)
-            this.env = regionCoprocessorEnvironment;
+        if (env instanceof RegionCoprocessorEnvironment)
+            this.env = (RegionCoprocessorEnvironment) env;
         else
             throw new CoprocessorException("Must be loaded on a table region!");
     }
@@ -83,15 +76,15 @@ public class PutEndpoint extends PutProtos.PutService implements HBSCoprocessor 
                     .addFamily(family)
                     .readVersions(1);
             Put put = new Put(row, requestTs)
-                    .addColumn(family, Constants.DataQualifierBytes, value)
-                    .addColumn(family, Constants.UncommittedQualifierBytes, Bytes.toBytes(""));
+                    .addColumn(family, Constants.DATA_QUALIFIER_BYTES, value)
+                    .addColumn(family, Constants.UNCOMMITTED_QUALIFIER_BYTES, Bytes.toBytes(""));
 
             Region.RowLock lock = getLock(region, row);
             try {
                 // read the last version
                 var res = region.get(get);
-                var kv = res.getColumnLatestCell(family, Constants.DataQualifierBytes);
-                var rtCell = res.getColumnLatestCell(family, Constants.ReadTimestampQualifierBytes);
+                var kv = res.getColumnLatestCell(family, Constants.DATA_QUALIFIER_BYTES);
+                var rtCell = res.getColumnLatestCell(family, Constants.READ_TIMESTAMP_QUALIFIER_BYTES);
                 // find RT of this data cell by its version
                 if (kv != null && rtCell != null
                         && rtCell.getTimestamp() == kv.getTimestamp()) {
