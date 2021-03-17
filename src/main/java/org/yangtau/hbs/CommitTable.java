@@ -2,6 +2,8 @@ package org.yangtau.hbs;
 
 import org.apache.hadoop.hbase.util.Bytes;
 
+import java.util.concurrent.CompletableFuture;
+
 // a successfully committed txn must write a row in this table
 // this is a flag so that other txns knew whether a txn is committed or aborted.
 public class CommitTable {
@@ -15,15 +17,19 @@ public class CommitTable {
         this.storage = storage;
     }
 
-    public boolean exists(long timestamp) throws Exception {
-        return storage.exists(TABLE_NAME, Bytes.toBytes(timestamp), COLUMN).get();
+    private KeyValue.Key timestampToKey(long timestamp) {
+        return new KeyValue.Key(TABLE_NAME, Bytes.toBytes(timestamp), COLUMN);
     }
 
-    public void commit(long timestamp) throws Exception {
-        storage.put(TABLE_NAME, Bytes.toBytes(timestamp), COLUMN, VALUE).get();
+    public CompletableFuture<Boolean> exists(long timestamp) {
+        return storage.exists(timestampToKey(timestamp));
     }
 
-    public void delete(long timestamp) throws Exception {
-        storage.remove(TABLE_NAME, Bytes.toBytes(timestamp), COLUMN).get();
+    public CompletableFuture<Void> commit(long timestamp) {
+        return storage.put(timestampToKey(timestamp), VALUE);
+    }
+
+    public CompletableFuture<Void> drop(long timestamp) {
+        return storage.remove(timestampToKey(timestamp));
     }
 }

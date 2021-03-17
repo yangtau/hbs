@@ -6,18 +6,19 @@ import java.util.Map;
 
 public class HBSTransaction implements Transaction {
     private final long timestamp;
-    private final Storage storage;
+    private final MVCCStorage storage;
     private final TransactionManager manager;
     private final CommitTable commitTable;
 
     private final Map<KeyValue.Key, byte[]> writeSet;
     private Status status;
 
-    public HBSTransaction(Storage storage, TransactionManager manager) throws Exception {
+    public HBSTransaction(MVCCStorage mvccStorage, TransactionManager manager, CommitTable commitTable)
+            throws Exception {
         this.timestamp = manager.allocate();
-        this.storage = storage;
+        this.storage = mvccStorage;
         this.manager = manager;
-        this.commitTable = new CommitTable(storage);
+        this.commitTable = commitTable;
 
         writeSet = new HashMap<>();
         status = Status.Uncommitted;
@@ -28,17 +29,17 @@ public class HBSTransaction implements Transaction {
         return timestamp;
     }
 
-    // wait for txn(timestamp) exiting, and clean commit flag in (table, row, col, timestamp) if txn committed,
+    // wait for txn(timestamp) exiting, and clean commit flag in (table, row, column, timestamp) if txn committed,
     // otherwise clean this data cell
     // return true if the txn committed
     private boolean waitAndClean(KeyValue.Key key, long timestamp) throws Exception {
         manager.waitIfExists(timestamp);
-        if (commitTable.exists(timestamp)) {
+        if (commitTable.exists(timestamp).get()) {
             // TODO: try to clean commitFlag
             return true;
         } else {
             // TODO: will this fail?
-            storage.cleanCell(key, timestamp).get();
+            storage.removeCell(key, timestamp).get();
             return false;
         }
     }
@@ -83,19 +84,19 @@ public class HBSTransaction implements Transaction {
             if (!storage.putIfNoConflict(key, value, timestamp).get()) {
                 manager.release(timestamp);
                 // clean data that have already been written
-                storage.cleanCells(writtenList, timestamp).get();
+                storage.removeCells(writtenList, timestamp).get();
                 return false;
             }
             writtenList.add(key);
         }
 
         // - COMMIT POINT:
-        commitTable.commit(timestamp);
+        commitTable.commit(timestamp).get();
         status = Status.Committed;
 
         // - SECOND PHASE: clean uncommitted flags
         var keyList = writeSet.keySet();
-        storage.cleanUncommittedFlag(keyList, timestamp).get();
+        storage.cleanUncommittedFlags(keyList, timestamp).get();
         return true;
     }
 
