@@ -4,7 +4,6 @@ import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.*;
 import org.yangtau.hbs.KeyValue;
 import org.yangtau.hbs.MVCCStorage;
-import org.yangtau.hbs.Storage;
 import org.yangtau.hbs.hbase.coprocessor.GetEndpoint;
 import org.yangtau.hbs.hbase.coprocessor.PutEndpoint;
 

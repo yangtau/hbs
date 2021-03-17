@@ -2,6 +2,7 @@ package org.yangtau.hbs;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class HBSTransaction implements Transaction {
@@ -11,6 +12,7 @@ public class HBSTransaction implements Transaction {
     private final CommitTable commitTable;
 
     private final Map<KeyValue.Key, byte[]> writeSet;
+    private final Map<KeyValue.Key, KeyValue.Value> readSet;
     private Status status;
 
     public HBSTransaction(MVCCStorage mvccStorage, TransactionManager manager, CommitTable commitTable)
@@ -21,6 +23,7 @@ public class HBSTransaction implements Transaction {
         this.commitTable = commitTable;
 
         writeSet = new HashMap<>();
+        readSet = new HashMap<>();
         status = Status.Uncommitted;
     }
 
@@ -34,33 +37,37 @@ public class HBSTransaction implements Transaction {
     // return true if the txn committed
     private boolean waitAndClean(KeyValue.Key key, long timestamp) throws Exception {
         manager.waitIfExists(timestamp);
-        if (commitTable.exists(timestamp).get()) {
-            // TODO: try to clean commitFlag
+        if (commitTable.exists(timestamp).join()) {
+            // do not join, because the flag is not crucial to the correctness
+            storage.cleanUncommittedFlag(key, timestamp);
             return true;
         } else {
-            // TODO: will this fail?
-            storage.removeCell(key, timestamp).get();
+            storage.removeCell(key, timestamp).join();
             return false;
         }
     }
 
     @Override
     public byte[] get(String table, byte[] row, byte[] col) throws Exception {
-        expectUncommitted();
         var key = new KeyValue.Key(table, row, col);
 
         // try to read in writeSet
         var value = writeSet.get(key);
         if (value != null) return value;
 
-        // no such key in writeSet
-        // TODO: cache read set
+        // no such key in the writeSet, try to read in readSet
+        var v = readSet.get(key);
+        if (v != null) return v.value();
+
+        // try to read in storage
         while (true) {
-            var res = storage.getWithReadTimestamp(key, timestamp).get();
+            var res = storage.getWithReadTimestamp(key, timestamp).join();
             if (res == null) return null;
             if (!res.committed()) {
-                if (waitAndClean(key, timestamp))
+                if (waitAndClean(key, res.timestamp())) {
+                    readSet.put(key, res);
                     return res.value();
+                }
                 // else: try to read an older version
             }
         }
@@ -68,7 +75,6 @@ public class HBSTransaction implements Transaction {
 
     @Override
     public void put(String table, byte[] row, byte[] col, byte[] value) throws Exception {
-        expectUncommitted();
         writeSet.put(new KeyValue.Key(table, row, col), value);
     }
 
@@ -81,31 +87,34 @@ public class HBSTransaction implements Transaction {
         for (var e : writeSet.entrySet()) {
             var key = e.getKey();
             var value = e.getValue();
-            if (!storage.putIfNoConflict(key, value, timestamp).get()) {
-                manager.release(timestamp);
-                // clean data that have already been written
-                storage.removeCells(writtenList, timestamp).get();
+            if (!storage.putIfNoConflict(key, value, timestamp).join()) {
+                abortAndClean(writtenList);
                 return false;
             }
             writtenList.add(key);
         }
 
         // - COMMIT POINT:
-        commitTable.commit(timestamp).get();
+        commitTable.commit(timestamp).join();
         status = Status.Committed;
 
         // - SECOND PHASE: clean uncommitted flags
-        var keyList = writeSet.keySet();
-        storage.cleanUncommittedFlags(keyList, timestamp).get();
+        storage.cleanUncommittedFlags(writeSet.keySet(), timestamp).join();
         return true;
+    }
+
+    private void abortAndClean(List<KeyValue.Key> writtenList) throws Exception {
+        status = Status.Aborted;
+        manager.release(timestamp);
+
+        // clean data that have already been written
+        storage.removeCells(writtenList, timestamp).join();
     }
 
     @Override
     public void abort() throws Exception {
         expectUncommitted();
-        status = Status.Aborted;
-        manager.release(timestamp);
-        // ignore
+        abortAndClean(List.of());
     }
 
     private void expectUncommitted() throws Exception {
@@ -113,6 +122,9 @@ public class HBSTransaction implements Transaction {
             throw new Exception("The transaction is not uncommitted, status: " + status.toString());
     }
 
+    // possible changes:
+    // Uncommitted -> Committed
+    // Uncommitted -> Aborted
     enum Status {
         Committed,
         Aborted,

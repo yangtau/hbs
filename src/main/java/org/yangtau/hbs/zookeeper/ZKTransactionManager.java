@@ -77,15 +77,21 @@ public class ZKTransactionManager implements TransactionManager {
 
     @Override
     public void waitIfExists(long id) throws Exception {
+        Object sync = new Object();
         CuratorWatcher watcher = event -> {
-            if (event.getType() == Watcher.Event.EventType.NodeDeleted)
-                this.notify();
+            if (event.getType() == Watcher.Event.EventType.NodeDeleted) {
+                synchronized (sync) {
+                    sync.notify();
+                }
+            }
         };
 
         if (client.checkExists().usingWatcher(watcher).forPath(generateTxnPath(id)) == null)
             return;
 
         // keep waiting util the txn is removed
-        watcher.wait();
+        synchronized (sync) {
+            sync.wait();
+        }
     }
 }
