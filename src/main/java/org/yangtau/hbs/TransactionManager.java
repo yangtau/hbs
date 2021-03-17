@@ -50,7 +50,7 @@ public interface TransactionManager extends AutoCloseable {
     default CompletableFuture<Void> waitIfExistsAsync(long id) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                waitIfExistsAsync(id);
+                waitIfExists(id);
                 return null;
             } catch (Exception e) {
                 throw new CompletionException(e);

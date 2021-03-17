@@ -32,18 +32,36 @@ public class HBSTransaction implements Transaction {
         return timestamp;
     }
 
+    @Override
+    public Status getStatus() {
+        return status;
+    }
+
     // wait for txn(timestamp) exiting, and clean commit flag in (table, row, column, timestamp) if txn committed,
     // otherwise clean this data cell
     // return true if the txn committed
     private boolean waitAndClean(KeyValue.Key key, long timestamp) throws Exception {
         manager.waitIfExists(timestamp);
-        if (commitTable.exists(timestamp).join()) {
-            // do not join, because the flag is not crucial to the correctness
-            storage.cleanUncommittedFlag(key, timestamp);
-            return true;
-        } else {
-            storage.removeCell(key, timestamp).join();
-            return false;
+        // txn is lost connection with TM (committed, or the txn crashes)
+        while (true) {
+            var s = commitTable.status(timestamp).join();
+            if (s == Status.Uncommitted) {
+                // try to abort txn(timestamp), because it lost the connection with TM
+                if (commitTable.abort(timestamp).join())
+                    s = Status.Aborted;
+                else // fail to abort the txn (there may be concurrent status modification),  try to read again.
+                    continue;
+            }
+
+            if (s == Status.Committed) {
+                // try to clean the uncommitted flag in the data cell
+                storage.cleanUncommittedFlag(key, timestamp).join();
+                return true;
+            } else if (s == Status.Aborted) {
+                // remove the aborted data cell
+                storage.removeCell(key, timestamp).join();
+                return false;
+            }
         }
     }
 
@@ -95,7 +113,10 @@ public class HBSTransaction implements Transaction {
         }
 
         // - COMMIT POINT:
-        commitTable.commit(timestamp).join();
+        if (!commitTable.commit(timestamp).join()) {
+            abortAndClean(writtenList);
+            return false;
+        }
         status = Status.Committed;
 
         // - SECOND PHASE: clean uncommitted flags
@@ -115,19 +136,5 @@ public class HBSTransaction implements Transaction {
     public void abort() throws Exception {
         expectUncommitted();
         abortAndClean(List.of());
-    }
-
-    private void expectUncommitted() throws Exception {
-        if (status != Status.Uncommitted)
-            throw new Exception("The transaction is not uncommitted, status: " + status.toString());
-    }
-
-    // possible changes:
-    // Uncommitted -> Committed
-    // Uncommitted -> Aborted
-    enum Status {
-        Committed,
-        Aborted,
-        Uncommitted,
     }
 }

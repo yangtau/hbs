@@ -149,7 +149,7 @@ public class StorageTest {
             // remove all
             s.removeCells(map.keySet(), ts).get();
             for (var k : map.keySet()) {
-                assertFalse(exists(conn,  k, ts));
+                assertFalse(exists(conn, k, ts));
             }
 
             // repeated remove
@@ -157,6 +157,31 @@ public class StorageTest {
 
             s.removeTable(table1).get();
             s.removeTable(table2).get();
+        }
+    }
+
+    @Test
+    void putIfNotExistsTest() throws IOException {
+        try (var conn = ConnectionFactory.createAsyncConnection(configuration).join()) {
+            Storage s = new HBaseStorage(conn);
+            var table = "HELLO";
+
+            removeTableIfExists(conn, table);
+
+            var col1 = Bytes.toBytes("CF");
+            var col2 = Bytes.toBytes("ANOTHER CF");
+            s.createTable(table, List.of(col1, col2)).join();
+
+            var row1 = Bytes.toBytes("row1");
+            var val1 = Bytes.toBytes("hello world");
+            var key1 = new KeyValue.Key(table, row1, col1);
+
+            assertTrue(s.putIfNotExists(key1, val1).join());
+            assertFalse(s.putIfNotExists(key1, Bytes.toBytes("val2")).join());
+
+            assertTrue(Arrays.equals(s.get(key1).join(), val1));
+
+            s.removeTable(table).join();
         }
     }
 
