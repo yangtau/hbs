@@ -115,6 +115,8 @@ public class HBSTransaction implements Transaction {
             writtenList.add(key);
         }
 
+        // TODO: add hook here
+
         // - COMMIT POINT:
         if (!commitTable.commit(timestamp).join()) {
             abortAndClean(writtenList);
@@ -122,6 +124,8 @@ public class HBSTransaction implements Transaction {
         }
         manager.release(timestamp);
         status = Status.Committed;
+
+        // TODO: add hook here
 
         // - SECOND PHASE: clean uncommitted flags
         storage.cleanUncommittedFlags(writeSet.keySet(), timestamp).join();

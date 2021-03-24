@@ -1,6 +1,7 @@
 package org.yangtau.hbs;
 
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.hbase.util.Strings;
 
 import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
@@ -19,7 +20,7 @@ public class HBSCommitTable implements CommitTable {
     }
 
     private KeyValue.Key timestampToKey(long timestamp) {
-        return new KeyValue.Key(TABLE_NAME, Bytes.toBytes(timestamp), COLUMN);
+        return new KeyValue.Key(TABLE_NAME, Bytes.toBytes(String.valueOf(timestamp)), COLUMN);
     }
 
     public CompletableFuture<Transaction.Status> status(long timestamp) {
