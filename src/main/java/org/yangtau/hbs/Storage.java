@@ -5,6 +5,7 @@ import java.util.concurrent.CompletableFuture;
 
 // Interface for MVCC Storage
 public interface Storage {
+    // TODO: check table exists
     CompletableFuture<Void> createTable(String table, List<byte[]> cols);
 
     CompletableFuture<Void> removeTable(String table);
