@@ -87,6 +87,8 @@ public class HBSTransaction implements Transaction {
                     return res.value();
                 }
                 // else: try to read an older version
+            } else {
+                return res.value();
             }
         }
     }
@@ -98,6 +100,7 @@ public class HBSTransaction implements Transaction {
 
     @Override
     public boolean commit() throws Exception {
+        // TODO: optimize for READ ONLY
         expectUncommitted();
 
         // - FIRST PHASE: write data if no conflict
@@ -117,6 +120,7 @@ public class HBSTransaction implements Transaction {
             abortAndClean(writtenList);
             return false;
         }
+        manager.release(timestamp);
         status = Status.Committed;
 
         // - SECOND PHASE: clean uncommitted flags

@@ -8,11 +8,10 @@ import java.util.concurrent.CompletableFuture;
 // a successfully committed txn must write a row in this table
 // this is a flag so that other txns knew whether a txn is committed or aborted.
 public class HBSCommitTable implements CommitTable {
-    public static final String TABLE_NAME = "@COMMIT_TABLE";
+    public static final String TABLE_NAME = "HBS_COMMIT_TABLE";
     public static final byte[] COLUMN = Bytes.toBytes("@COMMIT");
     public static final byte[] COMMITTED = Bytes.toBytes("Y");
     public static final byte[] UNCOMMITTED = Bytes.toBytes("N");
-
     private final Storage storage;
 
     public HBSCommitTable(Storage storage) {

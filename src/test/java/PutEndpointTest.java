@@ -1,8 +1,6 @@
 import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.jupiter.api.Test;
-import org.yangtau.hbs.Storage;
-import org.yangtau.hbs.hbase.HBaseStorage;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -69,7 +67,6 @@ class PutEndpointTest extends EndpointTest {
         try (var conn = ConnectionFactory.createAsyncConnection(conf).get()) {
             deleteTable(conn);
             createTable(conn);
-            Storage s = new HBaseStorage(conn);
 
             Map<Long, String> versionToValue = new HashMap<>();
             Map<Long, Long> maxRts = new HashMap<>();
