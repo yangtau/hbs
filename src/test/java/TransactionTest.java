@@ -12,9 +12,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
@@ -463,13 +461,16 @@ public class TransactionTest {
         initTest(table, List.of(col));
 
         List<String> users = new ArrayList<>();
-        final int len = 100;
+        final int len = 1000;
+        final int userCount = 100;
         int sum = 0;
         var random = new Random();
 
+        var pool = Executors.newFixedThreadPool(100);
+
         // create users
         var txn1 = createTxn();
-        for (int i = 0; i < len; i++) {
+        for (int i = 0; i < userCount; i++) {
             var b = Math.abs(random.nextInt() % 100);
             var user = "user" + i;
             sum += b;
@@ -477,28 +478,24 @@ public class TransactionTest {
             txn1.put(table, Bytes.toBytes(user), col, Bytes.toBytes(b));
         }
         assertTrue(txn1.commit());
-        System.out.println("init txn id: " + txn1.getTimestamp());
 
         AtomicInteger counter = new AtomicInteger(0);
-        var threads = new ArrayList<Thread>();
+        List<Callable<Void>> callables = new ArrayList<>(len);
         for (int i = 0; i < len; i++) {
-            final int id = i;
-            threads.add(new Thread(() -> {
+            callables.add(() -> {
                 // if user1.balance > 20 than user1.balance -= 10; user2.balance += 10
-                var user1 = users.get(Math.abs(random.nextInt()) % len);
-                var user2 = users.get(Math.abs(random.nextInt()) % len);
+                var user1 = users.get(Math.abs(random.nextInt()) % userCount);
+                var user2 = users.get(Math.abs(random.nextInt()) % userCount);
                 try (var conn = ConnectionFactory.createAsyncConnection(HBaseConfiguration.create()).join();
                      var manager = new ZKTransactionManager("localhost")) {
                     var s = new HBaseStorage(conn);
                     var txn = new HBSTransaction(s, manager, new HBSCommitTable(s));
 
-                    System.out.println("thread " + Thread.currentThread().getId() + " txn id: " + txn.getTimestamp());
-
                     var user1Balance = Bytes.toInt(txn.get(table, Bytes.toBytes(user1), col));
                     if (user1Balance < 20) {
                         txn.abort();
                         counter.incrementAndGet();
-                        return;
+                        return null;
                     }
 
                     txn.put(table, Bytes.toBytes(user1), col, Bytes.toBytes(user1Balance - 10));
@@ -515,16 +512,14 @@ public class TransactionTest {
                 } catch (Exception e) {
                     e.printStackTrace(System.err);
                 }
-            }));
+                return null;
+            });
         }
 
-        for (var t : threads)
-            t.start();
+        for (var f : pool.invokeAll(callables))
+            f.get();
 
-        for (var t : threads)
-            t.join();
-
-        System.out.println("# committed: " + counter);
+        System.out.println("#committed: " + counter);
 
         // check consistency
         var txn2 = createTxn();

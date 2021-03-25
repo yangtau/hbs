@@ -98,9 +98,10 @@ public class HBSTransaction implements Transaction {
         writeSet.put(new KeyValue.Key(table, row, col), value);
     }
 
-    private void failCommit(List<KeyValue.Key> cleanList) throws Exception {
+    private void failCommit(List<KeyValue.Key> cleanList, boolean writeCommitTable) throws Exception {
         status = Status.Aborted;
         storage.removeCells(cleanList, timestamp).join();
+        if (!cleanList.isEmpty() && writeCommitTable) commitTable.abort(timestamp).get();
         manager.release(timestamp);
     }
 
@@ -116,7 +117,7 @@ public class HBSTransaction implements Transaction {
             var key = e.getKey();
             var value = e.getValue();
             if (!storage.putIfNoConflict(key, value, timestamp).join()) {
-                failCommit(writtenList);
+                failCommit(writtenList, true);
                 return false;
             }
             writtenList.add(key);
@@ -126,7 +127,7 @@ public class HBSTransaction implements Transaction {
 
         // - COMMIT POINT:
         if (!commitTable.commit(timestamp).join()) {
-            failCommit(writtenList);
+            failCommit(writtenList, false);
             return false;
         }
         manager.release(timestamp);
