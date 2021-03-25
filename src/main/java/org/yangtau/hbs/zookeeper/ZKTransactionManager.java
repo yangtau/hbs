@@ -59,7 +59,6 @@ public class ZKTransactionManager implements TransactionManager {
 
     @Override
     public long allocate() throws Exception {
-        // FIXME: sometimes lower number has been allocated
         var res = client.create()
                 .withMode(CreateMode.EPHEMERAL_SEQUENTIAL)
                 .forPath(ZKPrefix);
