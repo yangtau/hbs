@@ -8,41 +8,55 @@ import org.yangtau.hbs.hbase.HBaseStorage;
 import org.yangtau.hbs.zookeeper.ZKTransactionManager;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 public class TransactionTest {
+    private AsyncConnection conn;
+    private MVCCStorage storage;
+    private ConcurrentMap<Long, AsyncConnection> connections;
+    private TransactionManager manager;
 
-    private final AsyncConnection conn;
-    private final MVCCStorage storage;
-    private final Map<Long, AsyncConnection> connections;
-    private final TransactionManager manager;
-
-    public TransactionTest() {
+    void initTest(String table, List<byte[]> cols) {
         conn = ConnectionFactory.createAsyncConnection(HBaseConfiguration.create()).join();
         storage = new HBaseStorage(conn);
-        connections = new HashMap<>();
+        connections = new ConcurrentHashMap<>();
 
+        try {
+            storage.removeTable(table).join();
+        } catch (Exception ignored) {
+        }
+        try {
+            storage.removeTable(HBSCommitTable.TABLE_NAME).join();
+        } catch (CompletionException ignored) {
+        }
         try {
             ZKTransactionManager.createParentNode("localhost");
-        } catch (Exception e) {
-            System.err.println(e.getMessage());
+        } catch (Exception ignored) {
         }
 
-        try {
-            storage.createTable(HBSCommitTable.TABLE_NAME, List.of(HBSCommitTable.COLUMN)).join();
-        } catch (CompletionException e) {
-            System.err.println(e.getMessage());
-        }
+        storage.createMVCCTable(table, cols).join();
+        storage.createTable(HBSCommitTable.TABLE_NAME, List.of(HBSCommitTable.COLUMN)).join();
 
         manager = new ZKTransactionManager("localhost");
+    }
+
+    void endTest(String table) throws Exception {
+        storage.removeTable(table).join();
+        conn.close();
+        manager.close();
+        for (var e : connections.values()) {
+            e.close();
+        }
     }
 
     Transaction createTxn() throws Exception {
@@ -69,7 +83,6 @@ public class TransactionTest {
                 txn.get(key.table(), key.row(), key.column())
         ));
         assertTrue(txn.commit());
-        releaseTxn(txn);
     }
 
     void biCheck(KeyValue.Key key1, KeyValue.Key key2, BiPredicate<byte[], byte[]> predicate) throws Exception {
@@ -78,7 +91,6 @@ public class TransactionTest {
                 txn.get(key1.table(), key1.row(), key1.column()),
                 txn.get(key2.table(), key2.row(), key2.column())));
         assertTrue(txn.commit());
-        releaseTxn(txn);
     }
 
     void checkEqual(String table, byte[] col, byte[] x, byte[] y) throws Exception {
@@ -101,9 +113,6 @@ public class TransactionTest {
 
         txn1.put(table, y, col, Bytes.toBytes(1));
         assertTrue(txn1.commit());
-
-        releaseTxn(txn2);
-        releaseTxn(txn1);
     }
 
     // txn2 abort before txn1 commit
@@ -118,9 +127,6 @@ public class TransactionTest {
 
         txn1.put(table, y, col, Bytes.toBytes(1));
         assertTrue(txn1.commit());
-
-        releaseTxn(txn2);
-        releaseTxn(txn1);
     }
 
 
@@ -128,12 +134,7 @@ public class TransactionTest {
     void dirtyWrite() throws Exception {
         var table = "dirty-write-test";
         var col = Bytes.toBytes("cf");
-        try {
-            storage.removeTable(table).join();
-        } catch (Exception e) {
-            System.err.println(e.getMessage());
-        }
-        storage.createMVCCTable(table, List.of(col)).join();
+        initTest(table, List.of(col));
 
         var x = Bytes.toBytes("x");
         var y = Bytes.toBytes("y");
@@ -151,19 +152,14 @@ public class TransactionTest {
         dirtyWriteCase2(table, col, x, y);
         checkEqual(table, col, x, y);
 
-        storage.removeTable(table).join();
+        endTest(table);
     }
 
     @Test
     void dirtyRead() throws Exception {
         var table = "dirty-read-test";
         var col = Bytes.toBytes("cf");
-        try {
-            storage.removeTable(table).join();
-        } catch (Exception e) {
-            System.err.println(e.getMessage());
-        }
-        storage.createMVCCTable(table, List.of(col)).join();
+        initTest(table, List.of(col));
 
         var x = Bytes.toBytes("x");
         var y = Bytes.toBytes("y");
@@ -173,7 +169,6 @@ public class TransactionTest {
         txn0.put(table, x, col, Bytes.toBytes(0));
         txn0.put(table, y, col, Bytes.toBytes(0));
         assertTrue(txn0.commit());
-        releaseTxn(txn0);
 
         var txn1 = createTxn();
         var txn2 = createTxn();
@@ -191,22 +186,14 @@ public class TransactionTest {
 
         assertTrue(txn2.commit());
 
-        releaseTxn(txn1);
-        releaseTxn(txn2);
-
-        storage.removeTable(table).join();
+        endTest(table);
     }
 
     @Test
     void updateLost() throws Exception {
         var table = "update-lost-test";
         var col = Bytes.toBytes("cf");
-        try {
-            storage.removeTable(table).join();
-        } catch (Exception e) {
-            System.err.println(e.getMessage());
-        }
-        storage.createMVCCTable(table, List.of(col)).join();
+        initTest(table, List.of(col));
 
         var x = Bytes.toBytes("x");
 
@@ -232,23 +219,15 @@ public class TransactionTest {
         // txn1 should fail to commit
         assertFalse(txn1.commit());
 
-        releaseTxn(txn1);
-        releaseTxn(txn2);
-
         check(new KeyValue.Key(table, x, col), (v) -> Arrays.equals(v, Bytes.toBytes(2)));
-        storage.removeTable(table).join();
+        endTest(table);
     }
 
     @Test
     void fuzzyRead() throws Exception {
         var table = "fuzzy-read-test";
         var col = Bytes.toBytes("cf");
-        try {
-            storage.removeTable(table).join();
-        } catch (Exception e) {
-            System.err.println(e.getMessage());
-        }
-        storage.createMVCCTable(table, List.of(col)).join();
+        initTest(table, List.of(col));
 
         var x = Bytes.toBytes("x");
 
@@ -256,7 +235,6 @@ public class TransactionTest {
         var txn0 = createTxn();
         txn0.put(table, x, col, Bytes.toBytes(0));
         assertTrue(txn0.commit());
-        releaseTxn(txn0);
 
         // x = 10
         var txn1 = createTxn();
@@ -274,23 +252,14 @@ public class TransactionTest {
         assertEquals(txn1x1, txn1x2);
 
         assertTrue(txn1.commit());
-
-        releaseTxn(txn1);
-        releaseTxn(txn2);
-
-        storage.removeTable(table).join();
+        endTest(table);
     }
 
     @Test
     void readSkew() throws Exception {
         var table = "read-skew-test";
         var col = Bytes.toBytes("cf");
-        try {
-            storage.removeTable(table).join();
-        } catch (Exception e) {
-            System.err.println(e.getMessage());
-        }
-        storage.createMVCCTable(table, List.of(col)).join();
+        initTest(table, List.of(col));
 
         var x = Bytes.toBytes("x");
         var y = Bytes.toBytes("y");
@@ -300,7 +269,6 @@ public class TransactionTest {
         txn0.put(table, x, col, Bytes.toBytes(0));
         txn0.put(table, y, col, Bytes.toBytes(0));
         assertTrue(txn0.commit());
-        releaseTxn(txn0);
 
         // read x, read y
         var txn1 = createTxn();
@@ -318,24 +286,14 @@ public class TransactionTest {
         assertTrue(Arrays.equals(txn1x, txn1y));
         biCheck(new KeyValue.Key(table, x, col), new KeyValue.Key(table, y, col),
                 (v1, v2) -> Arrays.equals(v1, Bytes.toBytes(1)) && Arrays.equals(v2, Bytes.toBytes(1)));
-
-        releaseTxn(txn1);
-        releaseTxn(txn2);
-
-        storage.removeTable(table).join();
+        endTest(table);
     }
 
     @Test
     void writeSkew() throws Exception {
         var table = "write-skew-test";
         var col = Bytes.toBytes("cf");
-        try {
-            storage.removeTable(table).join();
-        } catch (Exception e) {
-            System.err.println(e.getMessage());
-        }
-        storage.createMVCCTable(table, List.of(col)).join();
-
+        initTest(table, List.of(col));
         var x = Bytes.toBytes("x");
         var y = Bytes.toBytes("y");
 
@@ -344,7 +302,6 @@ public class TransactionTest {
         txn0.put(table, x, col, Bytes.toBytes(1));
         txn0.put(table, y, col, Bytes.toBytes(1));
         assertTrue(txn0.commit());
-        releaseTxn(txn0);
 
         // txn1: if x+y == 2 then x = 0
         var txn1 = createTxn();
@@ -367,9 +324,89 @@ public class TransactionTest {
 
         biCheck(new KeyValue.Key(table, x, col), new KeyValue.Key(table, y, col),
                 (v1, v2) -> Bytes.toInt(v1) + Bytes.toInt(v2) == 1);
+        endTest(table);
+    }
 
-        releaseTxn(txn1);
-        releaseTxn(txn2);
-        storage.removeTable(table).join();
+    @Test
+    void concurrentTxns() throws Exception {
+        var table = "balance";
+        var col = Bytes.toBytes("data");
+        initTest(table, List.of(col));
+
+        List<String> users = new ArrayList<>();
+        final int len = 100;
+        int sum = 0;
+        var random = new Random();
+
+        // create users
+        var txn1 = createTxn();
+        for (int i = 0; i < len; i++) {
+            var b = Math.abs(random.nextInt() % 100);
+            var user = "user" + i;
+            sum += b;
+            users.add(user);
+            txn1.put(table, Bytes.toBytes(user), col, Bytes.toBytes(b));
+        }
+        assertTrue(txn1.commit());
+        System.out.println("init txn id: " + txn1.getTimestamp());
+
+        var threads = new ArrayList<Thread>();
+        boolean[] committed = new boolean[len];
+        for (int i = 0; i < len; i++) {
+            final int id = i;
+            threads.add(new Thread(() -> {
+                // if user1.balance > 20 than user1.balance -= 10; user2.balance += 10
+                var user1 = users.get(Math.abs(random.nextInt()) % len);
+                var user2 = users.get(Math.abs(random.nextInt()) % len);
+                try (var conn = ConnectionFactory.createAsyncConnection(HBaseConfiguration.create()).join();
+                     var manager = new ZKTransactionManager("localhost")) {
+                    var s = new HBaseStorage(conn);
+                    var txn = new HBSTransaction(s, manager, new HBSCommitTable(s));
+
+                    System.out.println("thread " + Thread.currentThread().getId() + " txn id: " + txn.getTimestamp());
+
+                    var user1Balance = Bytes.toInt(txn.get(table, Bytes.toBytes(user1), col));
+                    if (user1Balance < 20) {
+                        txn.abort();
+                        committed[id] = true;
+                        return;
+                    }
+
+                    txn.put(table, Bytes.toBytes(user1), col, Bytes.toBytes(user1Balance - 10));
+                    var user2Balance = Bytes.toInt(txn.get(table, Bytes.toBytes(user2), col));
+                    if (user1.equals(user2)) {
+                        assertEquals(user1Balance - 10, user2Balance);
+                    }
+                    txn.put(table, Bytes.toBytes(user2), col, Bytes.toBytes(user2Balance + 10));
+
+                    if (committed[id] = txn.commit())
+                        System.out.println("thread " + Thread.currentThread().getId() + " " + user1 + " -> " + user2);
+                } catch (Exception e) {
+                    e.printStackTrace(System.err);
+                }
+            }));
+        }
+
+        for (var t : threads)
+            t.start();
+
+        for (var t : threads)
+            t.join();
+
+        int committedCount = 0;
+        for (int i = 0; i < len; i++)
+            if (committed[i]) committedCount++;
+        System.out.println("# committed: " + committedCount);
+
+        // check consistency
+        var txn2 = createTxn();
+        int newSum = 0;
+        for (var u : users) {
+            newSum += Bytes.toInt(txn2.get(table, Bytes.toBytes(u), col));
+        }
+        txn2.commit();
+        assertEquals(sum, newSum);
+
+        endTest(table);
     }
 }

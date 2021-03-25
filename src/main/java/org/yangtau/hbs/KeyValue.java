@@ -1,5 +1,6 @@
 package org.yangtau.hbs;
 
+import java.util.Arrays;
 import java.util.Objects;
 
 public final class KeyValue {
@@ -17,20 +18,6 @@ public final class KeyValue {
 
     public Value value() {
         return value;
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-        if (obj == this) return true;
-        if (obj == null || obj.getClass() != this.getClass()) return false;
-        KeyValue that = (KeyValue) obj;
-        return Objects.equals(this.key, that.key) &&
-                Objects.equals(this.value, that.value);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(key, value);
     }
 
     @Override
@@ -64,24 +51,9 @@ public final class KeyValue {
         }
 
         @Override
-        public boolean equals(Object obj) {
-            if (obj == this) return true;
-            if (obj == null || obj.getClass() != this.getClass()) return false;
-            Value that = (Value) obj;
-            return Objects.equals(this.value, that.value) &&
-                    this.timestamp == that.timestamp &&
-                    this.committed == that.committed;
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(value, timestamp, committed);
-        }
-
-        @Override
         public String toString() {
             return "Value[" +
-                    "value=" + value + ", " +
+                    "value=" + Arrays.toString(value) + ", " +
                     "timestamp=" + timestamp + ", " +
                     "committed=" + committed + ']';
         }
@@ -117,21 +89,23 @@ public final class KeyValue {
             if (obj == null || obj.getClass() != this.getClass()) return false;
             Key that = (Key) obj;
             return Objects.equals(this.table, that.table) &&
-                    Objects.equals(this.row, that.row) &&
-                    Objects.equals(this.column, that.column);
+                    Arrays.equals(this.row, that.row) &&
+                    Arrays.equals(this.column, that.column);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(table, row, column);
+            return Objects.hash(table,
+                    Arrays.hashCode(row),
+                    Arrays.hashCode(column));
         }
 
         @Override
         public String toString() {
             return "Key[" +
                     "table=" + table + ", " +
-                    "row=" + row + ", " +
-                    "column=" + column + ']';
+                    "row=" + Arrays.toString(row) + ", " +
+                    "column=" + Arrays.toString(column) + ']';
         }
     }
 }

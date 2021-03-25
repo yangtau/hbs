@@ -1,7 +1,6 @@
 package org.yangtau.hbs;
 
 import org.apache.hadoop.hbase.util.Bytes;
-import org.apache.hadoop.hbase.util.Strings;
 
 import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
