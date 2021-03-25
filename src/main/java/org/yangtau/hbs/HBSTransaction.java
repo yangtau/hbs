@@ -98,9 +98,16 @@ public class HBSTransaction implements Transaction {
         writeSet.put(new KeyValue.Key(table, row, col), value);
     }
 
+    private void failCommit(List<KeyValue.Key> cleanList) throws Exception {
+        status = Status.Aborted;
+        storage.removeCells(cleanList, timestamp).join();
+        manager.release(timestamp);
+    }
+
     @Override
     public boolean commit() throws Exception {
         // TODO: optimize for READ ONLY
+        // TODO: concurrent prewrite and clean
         expectUncommitted();
 
         // - FIRST PHASE: write data if no conflict
@@ -109,7 +116,7 @@ public class HBSTransaction implements Transaction {
             var key = e.getKey();
             var value = e.getValue();
             if (!storage.putIfNoConflict(key, value, timestamp).join()) {
-                abortAndClean(writtenList);
+                failCommit(writtenList);
                 return false;
             }
             writtenList.add(key);
@@ -119,7 +126,7 @@ public class HBSTransaction implements Transaction {
 
         // - COMMIT POINT:
         if (!commitTable.commit(timestamp).join()) {
-            abortAndClean(writtenList);
+            failCommit(writtenList);
             return false;
         }
         manager.release(timestamp);
@@ -132,17 +139,11 @@ public class HBSTransaction implements Transaction {
         return true;
     }
 
-    private void abortAndClean(List<KeyValue.Key> writtenList) throws Exception {
-        status = Status.Aborted;
-        manager.release(timestamp);
-
-        // clean data that have already been written
-        storage.removeCells(writtenList, timestamp).join();
-    }
 
     @Override
     public void abort() throws Exception {
         expectUncommitted();
-        abortAndClean(List.of());
+        status = Status.Aborted;
+        manager.release(timestamp);
     }
 }

@@ -4,22 +4,22 @@ import org.junit.jupiter.api.Test;
 import org.yangtau.hbs.TransactionManager;
 import org.yangtau.hbs.zookeeper.ZKTransactionManager;
 
+import java.util.ArrayList;
+import java.util.Random;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class ZKTxnManagerTest {
     public static final String connectString = "127.0.0.1";
 
-    void clearParentNode() throws Exception {
-        try (
-                var client = CuratorFrameworkFactory
-                        .newClient(connectString, new RetryForever(100))) {
+    void createParentNode() throws Exception {
+        try (var client = CuratorFrameworkFactory
+                .newClient(connectString, new RetryForever(100))) {
             client.start();
-            if (client.checkExists().forPath("/" + ZKTransactionManager.ZKParentPath) != null) {
-                client.delete().forPath("/" + ZKTransactionManager.ZKParentPath);
+            if (client.checkExists().forPath("/" + ZKTransactionManager.ZKParentPath) == null) {
                 ZKTransactionManager.createParentNode(connectString);
             }
         }
-
     }
 
     boolean exists(long id) throws Exception {
@@ -34,30 +34,68 @@ class ZKTxnManagerTest {
 
 
     @Test
-    void createTxnIdTest() throws Exception {
-        clearParentNode();
+    void createTxnId() throws Exception {
+        createParentNode();
 
-        var len = 10;
+        var len = 100;
+        long start;
 
         try (TransactionManager manager = new ZKTransactionManager(connectString)) {
+            start = manager.allocate();
             for (long i = 0; i < len; i++) {
                 var id = manager.allocate();
-                assertEquals(i, id);
+                assertEquals(i + 1 + start, id);
             }
         }
 
         // check that txns are removed after manager closed
         try (TransactionManager manager = new ZKTransactionManager(connectString)) {
             for (long i = 0; i < len; i++) {
-                assertFalse(exists(i));
-                assertFalse(manager.exists(i));
+                assertFalse(exists(i + 1 + start));
+                assertFalse(manager.exists(i + 1 + start));
             }
         }
     }
 
     @Test
-    void releaseTxnIdTest() throws Exception {
-        clearParentNode();
+    void concurrentCreate() throws Exception {
+        createParentNode();
+
+        TransactionManager manager = new ZKTransactionManager(connectString);
+
+        var len = 50;
+        final long start = manager.allocate();
+
+        var list = new ArrayList<Thread>();
+        for (long i = 0; i < len; i++) {
+            list.add(new Thread(() -> {
+                try (var m = new ZKTransactionManager(connectString)) {
+                    var id = m.allocate();
+                    assertTrue(id > start);
+                    Thread.sleep(Math.abs(new Random().nextInt() % 200));
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }));
+        }
+
+        for (var t : list)
+            t.start();
+
+        for (var t : list) {
+            t.join();
+        }
+
+        for (int i = 0; i < len; i++) {
+            var id = manager.allocate();
+            assertEquals(len + i + 1 + start, id);
+        }
+        manager.close();
+    }
+
+    @Test
+    void releaseTxnId() throws Exception {
+        createParentNode();
         TransactionManager manager = new ZKTransactionManager(connectString);
 
         var txn1 = manager.allocate();
@@ -76,7 +114,7 @@ class ZKTxnManagerTest {
 
     @Test
     void waitIfExists() throws Exception {
-        clearParentNode();
+        createParentNode();
         TransactionManager manager = new ZKTransactionManager(connectString);
 
         final long txn1 = manager.allocate();
@@ -110,7 +148,7 @@ class ZKTxnManagerTest {
 
     @Test
     void waitForever() throws Exception {
-        clearParentNode();
+        createParentNode();
         TransactionManager manager = new ZKTransactionManager(connectString);
 
         final long txn1 = manager.allocate();
@@ -145,7 +183,7 @@ class ZKTxnManagerTest {
 
     @Test
     void waitIfNotExist() throws Exception {
-        clearParentNode();
+        createParentNode();
 
         final long txn1 = 0;
         var t = new Thread(
