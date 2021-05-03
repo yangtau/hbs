@@ -11,7 +11,7 @@ public class HBSCommitTable implements CommitTable {
     public static final String TABLE_NAME = "HBS_COMMIT_TABLE";
     public static final byte[] COLUMN = Bytes.toBytes("@COMMIT");
     public static final byte[] COMMITTED = Bytes.toBytes("Y");
-    public static final byte[] UNCOMMITTED = Bytes.toBytes("N");
+    public static final byte[] ABORTED = Bytes.toBytes("N");
     private final Storage storage;
 
     public HBSCommitTable(Storage storage) {
@@ -38,6 +38,6 @@ public class HBSCommitTable implements CommitTable {
     }
 
     public CompletableFuture<Boolean> abort(long timestamp) {
-        return storage.putIfNotExists(timestampToKey(timestamp), UNCOMMITTED);
+        return storage.putIfNotExists(timestampToKey(timestamp), ABORTED);
     }
 }
