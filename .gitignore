@@ -187,3 +187,5 @@ buildNumber.properties
 .settings
 .idea
 hbs.iml
+
+bin/

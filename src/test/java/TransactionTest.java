@@ -303,7 +303,7 @@ public class TransactionTest {
 
         // txn1: if x+y == 2 then x = 0
         var txn1 = createTxn();
-        // txn1: if x+y == 2 then y = 0
+        // txn2: if x+y == 2 then y = 0
         var txn2 = createTxn();
 
         var txn1x = txn1.get(table, x, col);
@@ -315,7 +315,7 @@ public class TransactionTest {
             txn1.put(table, x, col, Bytes.toBytes(0));
 
         if (Bytes.toInt(txn2x) + Bytes.toInt(txn2y) == 2)
-            txn2.put(table, x, col, Bytes.toBytes(0));
+            txn2.put(table, y, col, Bytes.toBytes(0));
 
         assertTrue(txn2.commit());
         assertFalse(txn1.commit());
