@@ -13,7 +13,6 @@ public class HBSTransaction implements Transaction {
 
     private final Map<KeyValue.Key, byte[]> writeSet;
     private final Map<KeyValue.Key, KeyValue.Value> readSet;
-    private Status status;
 
     public HBSTransaction(MVCCStorage mvccStorage, TransactionManager manager, CommitTable commitTable)
             throws Exception {
@@ -24,17 +23,11 @@ public class HBSTransaction implements Transaction {
 
         writeSet = new HashMap<>();
         readSet = new HashMap<>();
-        status = Status.Uncommitted;
     }
 
     @Override
     public long getTimestamp() {
         return timestamp;
-    }
-
-    @Override
-    public Status getStatus() {
-        return status;
     }
 
     // wait for txn(timestamp) exiting, and clean commit flag in (table, row, column, timestamp) if txn committed,
@@ -88,6 +81,7 @@ public class HBSTransaction implements Transaction {
                 }
                 // else: try to read an older version
             } else {
+                readSet.put(key, res);
                 return res.value();
             }
         }
@@ -99,7 +93,6 @@ public class HBSTransaction implements Transaction {
     }
 
     private void failCommit(List<KeyValue.Key> cleanList, boolean writeCommitTable) throws Exception {
-        status = Status.Aborted;
         storage.removeCells(cleanList, timestamp).join();
         if (!cleanList.isEmpty() && writeCommitTable) commitTable.abort(timestamp).get();
         manager.release(timestamp);
@@ -109,7 +102,6 @@ public class HBSTransaction implements Transaction {
     public boolean commit() throws Exception {
         // TODO: optimize for READ ONLY
         // TODO: concurrent prewrite and clean
-        expectUncommitted();
 
         // - FIRST PHASE: write data if no conflict
         var writtenList = new ArrayList<KeyValue.Key>();
@@ -123,17 +115,12 @@ public class HBSTransaction implements Transaction {
             writtenList.add(key);
         }
 
-        // TODO: add hook here
-
         // - COMMIT POINT:
         if (!commitTable.commit(timestamp).join()) {
             failCommit(writtenList, false);
             return false;
         }
         manager.release(timestamp);
-        status = Status.Committed;
-
-        // TODO: add hook here
 
         // - SECOND PHASE: clean uncommitted flags
         storage.cleanUncommittedFlags(writeSet.keySet(), timestamp).join();
@@ -143,8 +130,7 @@ public class HBSTransaction implements Transaction {
 
     @Override
     public void abort() throws Exception {
-        expectUncommitted();
-        status = Status.Aborted;
         manager.release(timestamp);
+        writeSet.clear();
     }
 }

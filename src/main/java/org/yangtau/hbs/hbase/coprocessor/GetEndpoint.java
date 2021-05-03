@@ -63,7 +63,7 @@ public class GetEndpoint extends GetProtos.GetService implements HBSCoprocessor 
 
     /***************************************************************************
      * Algorithm of Get:
-     * data mode: key -> (value, WT, RT, C)
+     * data model: key -> (value, WT, RT, C)
      * get(key, TS):
      *     version =  max(c.WT if c.WT < TS for c in data[key])
      *     cell = for c in data[key] where c.WT == version

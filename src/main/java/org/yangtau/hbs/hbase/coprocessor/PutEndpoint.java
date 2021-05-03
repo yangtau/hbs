@@ -57,7 +57,7 @@ public class PutEndpoint extends PutProtos.PutService implements HBSCoprocessor 
 
     /***************************************************************************
      * Algorithm of Put:
-     * data mode: key -> (value, WT, RT, C)
+     * data model: key -> (value, WT, RT, C)
      * Put(key, value, TS):
      *     version =  max(c.WT if c.WT < TS for c in data[key])
      *     cell = for c in data[key] where c.WT == version

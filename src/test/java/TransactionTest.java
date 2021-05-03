@@ -72,7 +72,6 @@ public class TransactionTest {
     }
 
     void releaseTxn(Transaction txn) throws IOException {
-        assertNotEquals(txn.getStatus(), Transaction.Status.Uncommitted);
         connections.remove(txn.getTimestamp()).close();
     }
 
