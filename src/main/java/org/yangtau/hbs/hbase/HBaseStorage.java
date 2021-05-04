@@ -83,7 +83,7 @@ public class HBaseStorage implements MVCCStorage {
     }
 
     // remove cells in multi tables, multi rows
-    private CompletableFuture<Void> removeAllMultiTable(Collection<KeyValue.Key> keys,
+    private CompletableFuture<Void> removeAllInMultiTables(Collection<KeyValue.Key> keys,
                                                         Function<KeyValue.Key, Delete> deleteCreator) {
         var futures = keys.stream()
                 .collect(Collectors.groupingBy(KeyValue.Key::table, // group by table name
@@ -170,7 +170,7 @@ public class HBaseStorage implements MVCCStorage {
 
     @Override
     public CompletableFuture<Void> removeCells(Collection<KeyValue.Key> keys, long timestamp) {
-        return removeAllMultiTable(keys,
+        return removeAllInMultiTables(keys,
                 k -> new Delete(k.row()).addFamilyVersion(k.column(), timestamp));
     }
 
@@ -184,7 +184,7 @@ public class HBaseStorage implements MVCCStorage {
 
     @Override
     public CompletableFuture<Void> cleanUncommittedFlags(Collection<KeyValue.Key> keys, long timestamp) {
-        return removeAllMultiTable(keys,
+        return removeAllInMultiTables(keys,
                 k -> new Delete(k.row()).addColumn(k.column(), Constants.UNCOMMITTED_QUALIFIER_BYTES, timestamp));
     }
 }
