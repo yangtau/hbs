@@ -5,6 +5,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+// TODO(yangtau): check if exception may cause inconsistency
+
 public class HBSTransaction implements Transaction {
     private final long timestamp;
     private final MVCCStorage storage;
@@ -100,7 +102,13 @@ public class HBSTransaction implements Transaction {
 
     @Override
     public boolean commit() throws Exception {
-        // TODO: optimize for READ ONLY
+        // optimize for READ ONLY
+        if (writeSet.isEmpty()) {
+            // no need for 2PC
+            manager.release(timestamp);
+            return true;
+        }
+
         // TODO: concurrent prewrite and clean
 
         // - FIRST PHASE: write data if no conflict
@@ -120,11 +128,16 @@ public class HBSTransaction implements Transaction {
             failCommit(writtenList, false);
             return false;
         }
-        manager.release(timestamp);
 
-        // - SECOND PHASE: clean uncommitted flags
-        storage.cleanUncommittedFlags(writeSet.keySet(), timestamp).join();
-        return true;
+        try {
+            manager.release(timestamp);
+
+            // - SECOND PHASE: clean uncommitted flags
+            storage.cleanUncommittedFlags(writeSet.keySet(), timestamp).join();
+        } catch (Exception e) {
+            // ignore all exception after successful commitment
+        }
+       return true;
     }
 
 
