@@ -28,7 +28,7 @@ public class HBaseStorage implements MVCCStorage {
         if (tableMap.containsKey(tableName)) {
             return tableMap.get(tableName);
         } else {
-            var table = connection.getTable(TableName.valueOf(tableName));
+            AsyncTable<AdvancedScanResultConsumer> table = connection.getTable(TableName.valueOf(tableName));
             tableMap.put(tableName, table);
             return table;
         }
@@ -36,7 +36,7 @@ public class HBaseStorage implements MVCCStorage {
 
     private CompletableFuture<Void> createTable(String table, List<byte[]> cols,
                                                 Function<byte[], ColumnFamilyDescriptor> columnDescriptorCreator) {
-        var builder = TableDescriptorBuilder.newBuilder(TableName.valueOf(table));
+        TableDescriptorBuilder builder = TableDescriptorBuilder.newBuilder(TableName.valueOf(table));
         cols.forEach((col) -> builder.setColumnFamily(columnDescriptorCreator.apply(col)));
         return connection.getAdmin().createTable(builder.build());
     }
@@ -50,8 +50,8 @@ public class HBaseStorage implements MVCCStorage {
 
     @Override
     public CompletableFuture<Void> removeTable(String table) {
-        var tableName = TableName.valueOf(table);
-        var admin = connection.getAdmin();
+        TableName tableName = TableName.valueOf(table);
+        AsyncAdmin admin = connection.getAdmin();
         return admin.disableTable(tableName)
                 .thenComposeAsync(v -> admin.deleteTable(tableName));
     }
@@ -77,35 +77,38 @@ public class HBaseStorage implements MVCCStorage {
         return getTable(table).deleteAll(delete);
     }
 
-    private CompletableFuture<Boolean> checkAndMutate(String table, CheckAndMutate checkAndMutate) {
-        return getTable(table).checkAndMutate(checkAndMutate)
-                .thenApplyAsync(CheckAndMutateResult::isSuccess);
-    }
+    // cannot be used in hbase 2.3
+    // private CompletableFuture<Boolean> checkAndMutate(String table, CheckAndMutate checkAndMutate) {
+    //     getTable(table).checkAndMutate(row, filter)
+    //     return getTable(table).checkAndMutate(checkAndMutate)
+    //             .thenApplyAsync(CheckAndMutateResult::isSuccess);
+    // }
 
     // remove cells in multi tables, multi rows
     private CompletableFuture<Void> removeAllInMultiTables(Collection<KeyValue.Key> keys,
                                                         Function<KeyValue.Key, Delete> deleteCreator) {
-        var futures = keys.stream()
+        return CompletableFuture.allOf(
+            keys.stream()
                 .collect(Collectors.groupingBy(KeyValue.Key::table, // group by table name
                         Collectors.mapping(deleteCreator, Collectors.toList()))) // table -> List<Delete>
                 .entrySet()
                 .stream()
                 .map(e -> removeAll(e.getKey(), e.getValue()))
-                .toArray(CompletableFuture[]::new);
-        return CompletableFuture.allOf(futures);
+                .toArray(CompletableFuture[]::new)
+                );
 
     }
 
     @Override
     public CompletableFuture<Void> put(KeyValue.Key key, byte[] value) {
-        var put = new Put(key.row())
+        Put put = new Put(key.row())
                 .addColumn(key.column(), Constants.DATA_QUALIFIER_BYTES, value);
         return put(key.table(), put);
     }
 
     @Override
     public CompletableFuture<byte[]> get(KeyValue.Key key) {
-        var get = new Get(key.row())
+        Get get = new Get(key.row())
                 .addColumn(key.column(), Constants.DATA_QUALIFIER_BYTES);
         return get(key.table(), get)
                 .thenApplyAsync((r) -> r.getValue(key.column(), Constants.DATA_QUALIFIER_BYTES));
@@ -113,25 +116,26 @@ public class HBaseStorage implements MVCCStorage {
 
     @Override
     public CompletableFuture<Boolean> exists(KeyValue.Key key) {
-        var get = new Get(key.row())
+        Get get = new Get(key.row())
                 .addColumn(key.column(), Constants.DATA_QUALIFIER_BYTES);
         return exists(key.table(), get);
     }
 
     @Override
     public CompletableFuture<Void> remove(KeyValue.Key key) {
-        var delete = new Delete(key.row()).addColumn(key.column(), Constants.DATA_QUALIFIER_BYTES);
+        Delete delete = new Delete(key.row()).addColumn(key.column(), Constants.DATA_QUALIFIER_BYTES);
         return remove(key.table(), delete);
     }
 
     @Override
     public CompletableFuture<Boolean> putIfNotExists(KeyValue.Key key, byte[] value) {
-        var put = new Put(key.row())
+        Put put = new Put(key.row())
                 .addColumn(key.column(), Constants.DATA_QUALIFIER_BYTES, value);
-        var checkAndMutate = CheckAndMutate.newBuilder(key.row())
-                .ifNotExists(key.column(), Constants.DATA_QUALIFIER_BYTES)
-                .build(put);
-        return checkAndMutate(key.table(), checkAndMutate);
+
+        return getTable(key.table()).checkAndMutate(key.row(), key.column())
+                             .qualifier(Constants.DATA_QUALIFIER_BYTES)
+                             .ifNotExists()
+                             .thenPut(put);
     }
 
     @Override
@@ -162,7 +166,7 @@ public class HBaseStorage implements MVCCStorage {
 
     @Override
     public CompletableFuture<Void> removeCell(KeyValue.Key key, long timestamp) {
-        var delete = new Delete(key.row())
+        Delete delete = new Delete(key.row())
                 .addFamilyVersion(key.column(), timestamp);
         return remove(key.table(), delete);
     }
@@ -176,7 +180,7 @@ public class HBaseStorage implements MVCCStorage {
 
     @Override
     public CompletableFuture<Void> cleanUncommittedFlag(KeyValue.Key key, long timestamp) {
-        var delete = new Delete(key.row())
+        Delete delete = new Delete(key.row())
                 .addColumn(key.column(), Constants.UNCOMMITTED_QUALIFIER_BYTES, timestamp);
         return connection.getTable(TableName.valueOf(key.table()))
                 .delete(delete);

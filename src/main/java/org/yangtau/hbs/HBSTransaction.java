@@ -39,7 +39,7 @@ public class HBSTransaction implements Transaction {
         manager.waitIfExists(timestamp);
         // txn is lost connection with TM (committed, or the txn crashes)
         while (true) {
-            var s = commitTable.status(timestamp).join();
+            Status s = commitTable.status(timestamp).join();
             if (s == Status.Uncommitted) {
                 // try to abort txn(timestamp), because it lost the connection with TM
                 if (commitTable.abort(timestamp).join())
@@ -62,19 +62,19 @@ public class HBSTransaction implements Transaction {
 
     @Override
     public byte[] get(String table, byte[] row, byte[] col) throws Exception {
-        var key = new KeyValue.Key(table, row, col);
+        KeyValue.Key key = new KeyValue.Key(table, row, col);
 
         // try to read in writeSet
-        var value = writeSet.get(key);
+        byte[] value = writeSet.get(key);
         if (value != null) return value;
 
         // no such key in the writeSet, try to read in readSet
-        var v = readSet.get(key);
+        KeyValue.Value v = readSet.get(key);
         if (v != null) return v.value();
 
         // try to read in storage
         while (true) {
-            var res = storage.getWithReadTimestamp(key, timestamp).join();
+            KeyValue.Value res = storage.getWithReadTimestamp(key, timestamp).join();
             if (res == null) return null;
             if (!res.committed()) {
                 if (waitAndClean(key, res.timestamp())) {
@@ -112,10 +112,10 @@ public class HBSTransaction implements Transaction {
         // TODO: concurrent prewrite and clean
 
         // - FIRST PHASE: write data if no conflict
-        var writtenList = new ArrayList<KeyValue.Key>();
-        for (var e : writeSet.entrySet()) {
-            var key = e.getKey();
-            var value = e.getValue();
+        List<KeyValue.Key> writtenList = new ArrayList<>();
+        for (Map.Entry<KeyValue.Key, byte[]> e : writeSet.entrySet()) {
+            KeyValue.Key key = e.getKey();
+            byte[] value = e.getValue();
             if (!storage.putIfNoConflict(key, value, timestamp).join()) {
                 failCommit(writtenList, true);
                 return false;

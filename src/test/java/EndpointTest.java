@@ -20,12 +20,12 @@ class EndpointTest {
     protected final String family = "CF";
 
     protected void createTable(AsyncConnection conn) throws ExecutionException, InterruptedException {
-        var columnFamilyDescriptor = ColumnFamilyDescriptorBuilder
+        ColumnFamilyDescriptor columnFamilyDescriptor = ColumnFamilyDescriptorBuilder
                 .newBuilder(Bytes.toBytes(family))
                 .setMaxVersions(Integer.MAX_VALUE)
                 .setTimeToLive(Integer.MAX_VALUE)
                 .build();
-        var tableDescriptor = TableDescriptorBuilder
+        TableDescriptor tableDescriptor = TableDescriptorBuilder
                 .newBuilder(TableName.valueOf(tableName))
                 .setColumnFamily(columnFamilyDescriptor)
                 .build();
@@ -33,10 +33,10 @@ class EndpointTest {
     }
 
     protected void deleteTable(AsyncConnection conn) throws ExecutionException, InterruptedException {
-        var admin = conn.getAdmin();
+        AsyncAdmin admin = conn.getAdmin();
         admin.listTableNames().thenComposeAsync(
-                (list) -> {
-                    for (var t : list)
+                (tables) -> {
+                    for (TableName t : tables)
                         if (t.getNameAsString().equals(tableName))
                             return admin.disableTable(t).thenComposeAsync((v) -> admin.deleteTable(t));
                     return CompletableFuture.runAsync(() -> {
@@ -48,16 +48,16 @@ class EndpointTest {
     protected void put(AsyncConnection con, String row, long ts,
                        String qualifier, String value)
             throws InterruptedException, ExecutionException {
-        var table = con.getTable(TableName.valueOf(tableName));
-        var put = new Put(Bytes.toBytes(row), ts)
+        AsyncTable<AdvancedScanResultConsumer> table = con.getTable(TableName.valueOf(tableName));
+        Put put = new Put(Bytes.toBytes(row), ts)
                 .addColumn(Bytes.toBytes(family), Bytes.toBytes(qualifier), Bytes.toBytes(value));
         table.put(put).get();
     }
 
     protected Result get(AsyncConnection con, String row, long ts)
             throws InterruptedException, ExecutionException {
-        var table = con.getTable(TableName.valueOf(tableName));
-        var get = new Get(Bytes.toBytes(row))
+        AsyncTable<AdvancedScanResultConsumer> table = con.getTable(TableName.valueOf(tableName));
+        Get get = new Get(Bytes.toBytes(row))
                 .addFamily(Bytes.toBytes(family))
                 .setTimestamp(ts);
         return table.get(get).get();
@@ -66,7 +66,7 @@ class EndpointTest {
     // call endpointGet
     protected void expectEndpointGet(AsyncConnection conn, String row, long ts,
                                      byte[] expectValue, long expectVersion, boolean expectCommitted) {
-        var rsp = GetEndpoint.runAsync(
+         KeyValue.Value rsp = GetEndpoint.runAsync(
                 conn.getTable(TableName.valueOf(tableName)),
                 new KeyValue.Key(tableName, Bytes.toBytes(row), Bytes.toBytes(family)), ts)
                 .exceptionally((e) -> fail(e.getMessage()))
@@ -79,7 +79,7 @@ class EndpointTest {
 
     // call endpointGet
     protected void expectEndpointGet(AsyncConnection conn, String row, long ts) {
-        var rsp = GetEndpoint.runAsync(
+        KeyValue.Value rsp = GetEndpoint.runAsync(
                 conn.getTable(TableName.valueOf(tableName)),
                 new KeyValue.Key(tableName, Bytes.toBytes(row), Bytes.toBytes(family)), ts)
                 .exceptionally((e) -> fail(e.getMessage()))
@@ -89,7 +89,7 @@ class EndpointTest {
     }
 
     protected void expectEndpointPut(AsyncConnection con, String row, long ts, String value, boolean expectedResult) {
-        var rsp = PutEndpoint.runAsync(
+        boolean rsp = PutEndpoint.runAsync(
                 con.getTable(TableName.valueOf(tableName)),
                 new KeyValue.Key(tableName, Bytes.toBytes(row), Bytes.toBytes(family)),
                 Bytes.toBytes(value),
@@ -102,7 +102,7 @@ class EndpointTest {
 
     // check result of EndpointPut
     void checkUncommittedPut(AsyncConnection conn, String row, long ts, String value) throws ExecutionException, InterruptedException {
-        var res = get(conn, row, ts);
+        Result res = get(conn, row, ts);
         assertTrue(Arrays.equals(res.getValue(Bytes.toBytes(family), Constants.DATA_QUALIFIER_BYTES),
                 Bytes.toBytes(value)));
 
@@ -113,7 +113,7 @@ class EndpointTest {
     // check read timestamp
     protected void checkReadTimestamp(AsyncConnection conn, String row, long version, long expectRt)
             throws ExecutionException, InterruptedException {
-        var res = get(conn, row, version);
+        Result res = get(conn, row, version);
         assertTrue(res.containsColumn(Bytes.toBytes(family), Constants.READ_TIMESTAMP_QUALIFIER_BYTES));
         assertEquals(expectRt,
                 Bytes.toLong(res.getValue(Bytes.toBytes(family), Constants.READ_TIMESTAMP_QUALIFIER_BYTES)));
@@ -122,7 +122,7 @@ class EndpointTest {
     // check if there is no read timestamp
     protected void checkReadTimestamp(AsyncConnection conn, String row, long version)
             throws ExecutionException, InterruptedException {
-        var res = get(conn, row, version);
+        Result res = get(conn, row, version);
         assertFalse(res.containsColumn(Bytes.toBytes(family), Constants.READ_TIMESTAMP_QUALIFIER_BYTES));
     }
 }

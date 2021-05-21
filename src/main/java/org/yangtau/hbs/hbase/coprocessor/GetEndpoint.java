@@ -4,6 +4,8 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.RpcCallback;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.Service;
+
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CoprocessorEnvironment;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.coprocessor.CoprocessorException;
@@ -25,7 +27,7 @@ public class GetEndpoint extends GetProtos.GetService implements HBSCoprocessor 
     // run Get request on the coprocessor
     static public CompletableFuture<KeyValue.Value> runAsync(
             AsyncTable<AdvancedScanResultConsumer> asyncTable, KeyValue.Key key, long timestamp) {
-        var request = GetProtos.GetRequest.newBuilder()
+        GetProtos.GetRequest request = GetProtos.GetRequest.newBuilder()
                 .setRow(ByteString.copyFrom(key.row()))
                 .setColumn(ByteString.copyFrom(key.column()))
                 .setTimestamp(timestamp)
@@ -78,7 +80,7 @@ public class GetEndpoint extends GetProtos.GetService implements HBSCoprocessor 
         byte[] family = request.getColumn().toByteArray();
         long requestTs = request.getTimestamp();
 
-        var rspBuilder = GetProtos.GetResponse.newBuilder().setError(false);
+        GetProtos.GetResponse.Builder rspBuilder = GetProtos.GetResponse.newBuilder().setError(false);
 
         long writeTs = -1; // WT for the data cell to be read (version(timestamp) of the data cell)
         long readTs = -1; // RT for the data cell
@@ -93,22 +95,22 @@ public class GetEndpoint extends GetProtos.GetService implements HBSCoprocessor 
 
             Region.RowLock lock = getLock(region, row);
             try {
-                var res = region.get(get);
+                Result res = region.get(get);
 
                 // Data
-                var dataCell = res.getColumnLatestCell(family, Constants.DATA_QUALIFIER_BYTES);
+                Cell dataCell = res.getColumnLatestCell(family, Constants.DATA_QUALIFIER_BYTES);
                 if (dataCell != null) {
                     data = dataCell.getValueArray();
                     writeTs = dataCell.getTimestamp();
 
                     // Read @C & @RT only if there is data cell
                     // Committed Flag
-                    var commitCell = res.getColumnLatestCell(family, Constants.UNCOMMITTED_QUALIFIER_BYTES);
+                    Cell commitCell = res.getColumnLatestCell(family, Constants.UNCOMMITTED_QUALIFIER_BYTES);
                     if (commitCell != null && commitCell.getTimestamp() == writeTs)
                         committed = false;
 
                     // RT
-                    var rtCell = res.getColumnLatestCell(family, Constants.READ_TIMESTAMP_QUALIFIER_BYTES);
+                    Cell rtCell = res.getColumnLatestCell(family, Constants.READ_TIMESTAMP_QUALIFIER_BYTES);
                     if (rtCell != null && rtCell.getTimestamp() == writeTs)
                         readTs = Bytes.toLong(rtCell.getValueArray());
                 }

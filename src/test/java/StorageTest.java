@@ -1,7 +1,10 @@
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.client.AdvancedScanResultConsumer;
+import org.apache.hadoop.hbase.client.AsyncAdmin;
 import org.apache.hadoop.hbase.client.AsyncConnection;
+import org.apache.hadoop.hbase.client.AsyncTable;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -9,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.yangtau.hbs.KeyValue;
 import org.yangtau.hbs.MVCCStorage;
 import org.yangtau.hbs.Storage;
+import org.yangtau.hbs.KeyValue.Key;
 import org.yangtau.hbs.hbase.Constants;
 import org.yangtau.hbs.hbase.HBaseStorage;
 
@@ -23,9 +27,9 @@ public class StorageTest {
     private final Configuration configuration = HBaseConfiguration.create();
 
     private void removeTableIfExists(AsyncConnection conn, String table) {
-        var admin = conn.getAdmin();
+        AsyncAdmin admin = conn.getAdmin();
         admin.listTableNames().thenComposeAsync((list) -> {
-            for (var t : list) {
+            for (TableName t : list) {
                 if (t.getNameAsString().equals(table))
                     return admin.disableTable(t)
                             .thenComposeAsync((v) -> admin.deleteTable(t));
@@ -37,19 +41,19 @@ public class StorageTest {
 
     @Test
     void singleVersion() throws IOException {
-        try (var conn = ConnectionFactory.createAsyncConnection(configuration).join()) {
+        try (AsyncConnection conn = ConnectionFactory.createAsyncConnection(configuration).join()) {
             Storage s = new HBaseStorage(conn);
-            var table = "HELLO";
+            String table = "HELLO";
 
             removeTableIfExists(conn, table);
 
-            var col1 = Bytes.toBytes("CF");
-            var col2 = Bytes.toBytes("ANOTHER CF");
+            byte[] col1 = Bytes.toBytes("CF");
+            byte[] col2 = Bytes.toBytes("ANOTHER CF");
             s.createTable(table, List.of(col1, col2)).join();
 
-            var row1 = Bytes.toBytes("row1");
-            var val1 = Bytes.toBytes("hello world");
-            var key1 = new KeyValue.Key(table, row1, col1);
+            byte[] row1 = Bytes.toBytes("row1");
+            byte[] val1 = Bytes.toBytes("hello world");
+            KeyValue.Key key1 = new KeyValue.Key(table, row1, col1);
 
             assertFalse(s.exists(key1).join());
             // put
@@ -69,19 +73,19 @@ public class StorageTest {
 
     @Test
     void singleRowMultiVersion() throws Exception {
-        try (var conn = ConnectionFactory.createAsyncConnection(configuration).join()) {
+        try (AsyncConnection conn = ConnectionFactory.createAsyncConnection(configuration).join()) {
             MVCCStorage s = new HBaseStorage(conn);
-            var table = "HELLO";
+            String table = "HELLO";
 
             removeTableIfExists(conn, table);
 
-            var col1 = Bytes.toBytes("CF");
-            var col2 = Bytes.toBytes("ANOTHER CF");
+            byte[] col1 = Bytes.toBytes("CF");
+            byte[] col2 = Bytes.toBytes("ANOTHER CF");
             s.createMVCCTable(table, List.of(col1, col2)).join();
 
-            var row1 = Bytes.toBytes("row1");
-            var val1 = Bytes.toBytes("hello world");
-            var key1 = new KeyValue.Key(table, row1, col1);
+            byte[] row1 = Bytes.toBytes("row1");
+            byte[] val1 = Bytes.toBytes("hello world");
+            KeyValue.Key key1 = new KeyValue.Key(table, row1, col1);
 
             assertFalse(s.exists(key1).join());
 
@@ -108,30 +112,30 @@ public class StorageTest {
 
     @Test
     void multiRowMultiVersion() throws Exception {
-        try (var conn = ConnectionFactory.createAsyncConnection(configuration).join()) {
+        try (AsyncConnection conn = ConnectionFactory.createAsyncConnection(configuration).join()) {
             MVCCStorage s = new HBaseStorage(conn);
-            var table1 = "HELLO";
-            var table2 = "WORLD";
+            String table1 = "HELLO";
+            String table2 = "WORLD";
 
             removeTableIfExists(conn, table1);
             removeTableIfExists(conn, table2);
 
-            var col1 = Bytes.toBytes("CF");
-            var col2 = Bytes.toBytes("ANOTHER CF");
+            byte[] col1 = Bytes.toBytes("CF");
+            byte[] col2 = Bytes.toBytes("ANOTHER CF");
             s.createMVCCTable(table1, List.of(col1, col2)).join();
             s.createMVCCTable(table2, List.of(col1, col2)).join();
 
             Map<KeyValue.Key, KeyValue.Value> map = new HashMap<>();
-            var random = new Random();
+            Random random = new Random();
 
             long ts = Math.abs(random.nextLong()) % 20;
             for (int i = 0; i < 20; i++) {
-                var row = Bytes.toBytes("row:" + random.nextBoolean());
-                var value = Bytes.toBytes("value:" + random.nextBoolean());
-                var table = random.nextInt() % 2 == 0 ? table1 : table2;
-                var col = random.nextInt() % 2 == 0 ? col1 : col2;
-                var key = new KeyValue.Key(table, row, col);
-                var val = new KeyValue.Value(value, ts, false);
+                byte[] row = Bytes.toBytes("row:" + random.nextBoolean());
+                byte[] value = Bytes.toBytes("value:" + random.nextBoolean());
+                String table = random.nextInt() % 2 == 0 ? table1 : table2;
+                byte[] col = random.nextInt() % 2 == 0 ? col1 : col2;
+                KeyValue.Key key = new KeyValue.Key(table, row, col);
+                KeyValue.Value val = new KeyValue.Value(value, ts, false);
 
                 if (!map.containsKey(key)) {
                     map.put(key, val);
@@ -142,13 +146,13 @@ public class StorageTest {
 
             // clean all uncommitted flags
             s.cleanUncommittedFlags(map.keySet(), ts).join();
-            for (var k : map.keySet()) {
+            for (Key k : map.keySet()) {
                 checkNoCommittedFlag(conn, k.table(), k, ts);
             }
 
             // remove all
             s.removeCells(map.keySet(), ts).get();
-            for (var k : map.keySet()) {
+            for (Key k : map.keySet()) {
                 assertFalse(exists(conn, k, ts));
             }
 
@@ -162,19 +166,19 @@ public class StorageTest {
 
     @Test
     void putIfNotExistsTest() throws IOException {
-        try (var conn = ConnectionFactory.createAsyncConnection(configuration).join()) {
+        try (AsyncConnection conn = ConnectionFactory.createAsyncConnection(configuration).join()) {
             Storage s = new HBaseStorage(conn);
-            var table = "HELLO";
+            String table = "HELLO";
 
             removeTableIfExists(conn, table);
 
-            var col1 = Bytes.toBytes("CF");
-            var col2 = Bytes.toBytes("ANOTHER CF");
+            byte[] col1 = Bytes.toBytes("CF");
+            byte[] col2 = Bytes.toBytes("ANOTHER CF");
             s.createTable(table, List.of(col1, col2)).join();
 
-            var row1 = Bytes.toBytes("row1");
-            var val1 = Bytes.toBytes("hello world");
-            var key1 = new KeyValue.Key(table, row1, col1);
+            byte[] row1 = Bytes.toBytes("row1");
+            byte[] val1 = Bytes.toBytes("hello world");
+            Key key1 = new KeyValue.Key(table, row1, col1);
 
             assertTrue(s.putIfNotExists(key1, val1).join());
             assertFalse(s.putIfNotExists(key1, Bytes.toBytes("val2")).join());
@@ -186,7 +190,7 @@ public class StorageTest {
     }
 
     private boolean exists(AsyncConnection conn, KeyValue.Key key, long ts) {
-        var t = conn.getTable(TableName.valueOf(key.table()));
+        AsyncTable<AdvancedScanResultConsumer> t = conn.getTable(TableName.valueOf(key.table()));
         return t.exists(
                 new Get(key.row())
                         .addFamily(key.column())
@@ -197,8 +201,8 @@ public class StorageTest {
 
 
     private void checkNoCommittedFlag(AsyncConnection con, String table, KeyValue.Key key, long ts) {
-        var t = con.getTable(TableName.valueOf(table));
-        var res = t.exists(
+        AsyncTable<AdvancedScanResultConsumer> t = con.getTable(TableName.valueOf(table));
+        boolean res = t.exists(
                 new Get(key.row())
                         .addColumn(key.column(), Constants.UNCOMMITTED_QUALIFIER_BYTES)
                         .setTimestamp(ts))
