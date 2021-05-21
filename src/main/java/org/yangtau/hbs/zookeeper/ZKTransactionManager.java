@@ -33,7 +33,7 @@ public class ZKTransactionManager implements TransactionManager {
     }
 
     public static void createParentNode(String connectionStrings) throws Exception {
-        try (var client = CuratorFrameworkFactory.newClient(connectionStrings, retryPolicy)) {
+        try (CuratorFramework client = CuratorFrameworkFactory.newClient(connectionStrings, retryPolicy)) {
             client.start();
             client.create().forPath("/" + ZKParentPath);
         }
@@ -42,7 +42,7 @@ public class ZKTransactionManager implements TransactionManager {
     // converts txn path in zookeeper to txn id
     public static long parseTxnId(String txn) throws Exception {
         // "txn-xxxx"
-        var ss = txn.split("-");
+        String[] ss = txn.split("-");
         if (ss.length != 2) throw new Exception("unexpected transaction path: " + txn);
         return Integer.parseInt(ss[1]);
     }
@@ -59,7 +59,7 @@ public class ZKTransactionManager implements TransactionManager {
 
     @Override
     public long allocate() throws Exception {
-        var res = client.create()
+        String res = client.create()
                 .withMode(CreateMode.EPHEMERAL_SEQUENTIAL)
                 .forPath(ZKPrefix);
         return parseTxnId(res);

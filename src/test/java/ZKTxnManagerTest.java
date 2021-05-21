@@ -1,3 +1,4 @@
+import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.RetryForever;
 import org.junit.jupiter.api.Test;
@@ -5,6 +6,7 @@ import org.yangtau.hbs.TransactionManager;
 import org.yangtau.hbs.zookeeper.ZKTransactionManager;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -13,7 +15,7 @@ class ZKTxnManagerTest {
     public static final String connectString = "127.0.0.1";
 
     void createParentNode() throws Exception {
-        try (var client = CuratorFrameworkFactory
+        try (CuratorFramework client = CuratorFrameworkFactory
                 .newClient(connectString, new RetryForever(100))) {
             client.start();
             if (client.checkExists().forPath("/" + ZKTransactionManager.ZKParentPath) == null) {
@@ -23,7 +25,7 @@ class ZKTxnManagerTest {
     }
 
     boolean exists(long id) throws Exception {
-        try (var client =
+        try (CuratorFramework client =
                      CuratorFrameworkFactory.newClient(connectString, new RetryForever(100))) {
             client.start();
             return client.checkExists().forPath(
@@ -37,13 +39,13 @@ class ZKTxnManagerTest {
     void createTxnId() throws Exception {
         createParentNode();
 
-        var len = 100;
+        long len = 100;
         long start;
 
         try (TransactionManager manager = new ZKTransactionManager(connectString)) {
             start = manager.allocate();
             for (long i = 0; i < len; i++) {
-                var id = manager.allocate();
+                long id = manager.allocate();
                 assertEquals(i + 1 + start, id);
             }
         }
@@ -63,31 +65,33 @@ class ZKTxnManagerTest {
 
         TransactionManager manager = new ZKTransactionManager(connectString);
 
-        var len = 50;
+        long len = 50;
         final long start = manager.allocate();
 
-        var list = new ArrayList<Thread>();
-        for (long i = 0; i < len; i++) {
-            list.add(new Thread(() -> {
-                try (var m = new ZKTransactionManager(connectString)) {
-                    var id = m.allocate();
+        List<Thread> list = new ArrayList<Thread>();
+        Runnable worker = () -> {
+                try (TransactionManager m = new ZKTransactionManager(connectString)) {
+                    long id = m.allocate();
                     assertTrue(id > start);
                     Thread.sleep(Math.abs(new Random().nextInt() % 200));
                 } catch (Exception e) {
                     e.printStackTrace();
                 }
-            }));
+            };
+
+        for (long i = 0; i < len; i++) {
+            list.add(new Thread(worker));
         }
 
-        for (var t : list)
+        for (Thread t : list)
             t.start();
 
-        for (var t : list) {
+        for (Thread t : list) {
             t.join();
         }
 
         for (int i = 0; i < len; i++) {
-            var id = manager.allocate();
+            long id = manager.allocate();
             assertEquals(len + i + 1 + start, id);
         }
         manager.close();
@@ -98,8 +102,8 @@ class ZKTxnManagerTest {
         createParentNode();
         TransactionManager manager = new ZKTransactionManager(connectString);
 
-        var txn1 = manager.allocate();
-        var txn2 = manager.allocate();
+        long txn1 = manager.allocate();
+        long txn2 = manager.allocate();
 
         // explicitly release
         manager.release(txn1);
@@ -119,7 +123,7 @@ class ZKTxnManagerTest {
 
         final long txn1 = manager.allocate();
 
-        var t = new Thread(
+        Thread t = new Thread(
                 () -> {
                     // wait for txn1
                     TransactionManager txnManager = new ZKTransactionManager(connectString);
@@ -153,7 +157,7 @@ class ZKTxnManagerTest {
 
         final long txn1 = manager.allocate();
 
-        var t = new Thread(
+        Thread t = new Thread(
                 () -> {
                     try {
                         TransactionManager txnManager = new ZKTransactionManager(connectString);
@@ -186,7 +190,7 @@ class ZKTxnManagerTest {
         createParentNode();
 
         final long txn1 = 0;
-        var t = new Thread(
+        Thread t = new Thread(
                 () -> {
                     try {
                         TransactionManager txnManager = new ZKTransactionManager(connectString);

@@ -1,3 +1,4 @@
+import org.apache.hadoop.hbase.client.AsyncConnection;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.jupiter.api.Test;
@@ -6,6 +7,7 @@ import org.yangtau.hbs.hbase.Constants;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.ExecutionException;
 
@@ -13,11 +15,11 @@ import java.util.concurrent.ExecutionException;
 class GetEndpointTest extends EndpointTest {
     @Test
     void getCommittedAndUncommitted() throws ExecutionException, InterruptedException, IOException {
-        try (var conn = ConnectionFactory.createAsyncConnection(conf).get()) {
+        try (AsyncConnection conn = ConnectionFactory.createAsyncConnection(conf).get()) {
             deleteTable(conn);
             createTable(conn);
 
-            var value = "hello";
+            String value = "hello";
 
             // Read uncommitted
             // get with a small timestamp, no RT should be written
@@ -42,26 +44,26 @@ class GetEndpointTest extends EndpointTest {
 
     @Test
     void getInMultiVersions() throws ExecutionException, InterruptedException, IOException {
-        try (var conn = ConnectionFactory.createAsyncConnection(conf).get()) {
+        try (AsyncConnection conn = ConnectionFactory.createAsyncConnection(conf).get()) {
             deleteTable(conn);
             createTable(conn);
 
             String row = "row100";
             long length = 20;
             Map<Long, byte[]> versionToValue = new HashMap<>();
-            var random = new Random();
+            Random random = new Random();
 
             for (long i = 0L; i < length; i += 3L) {
-                var ts = Math.abs(random.nextLong()) % length;
-                var value = random.nextDouble() + "";
+                long ts = Math.abs(random.nextLong()) % length;
+                String value = random.nextDouble() + "";
                 put(conn, row, ts, Constants.DATA_QUALIFIER, value);
                 versionToValue.put(ts, Bytes.toBytes(value));
             }
 
 
             for (long i = 0L; i < length + 1L; i++) {
-                final var ts = i;
-                var opt = versionToValue.entrySet().stream()
+                final long ts = i;
+                Optional<Map.Entry<Long, byte[]>> opt = versionToValue.entrySet().stream()
                         .filter(e -> e.getKey() < ts)
                         .max((e1, e2) -> (int) (e1.getKey() - e2.getKey()));
 
@@ -76,7 +78,7 @@ class GetEndpointTest extends EndpointTest {
 
     @Test
     void multiGetOnSingleRow() throws ExecutionException, InterruptedException, IOException {
-        try (var conn = ConnectionFactory.createAsyncConnection(conf).get()) {
+        try (AsyncConnection conn = ConnectionFactory.createAsyncConnection(conf).get()) {
             deleteTable(conn);
             createTable(conn);
 
@@ -129,7 +131,7 @@ class GetEndpointTest extends EndpointTest {
 
     @Test
     void randomGet() throws ExecutionException, InterruptedException, IOException {
-        try (var conn = ConnectionFactory.createAsyncConnection(conf).get()) {
+        try (AsyncConnection conn = ConnectionFactory.createAsyncConnection(conf).get()) {
             deleteTable(conn);
             createTable(conn);
 
@@ -138,30 +140,30 @@ class GetEndpointTest extends EndpointTest {
             long maxTs = 20;
             Map<Long, byte[]> versionToValue = new HashMap<>();
             Map<Long, Long> maxRts = new HashMap<>();
-            var random = new Random();
+            Random random = new Random();
 
             // prepared data in the `row`
             for (long i = 0L; i < maxTs; i += 3L) {
-                var ts = Math.abs(random.nextLong()) % maxTs;
-                var value = random.nextDouble() + "";
+                long ts = Math.abs(random.nextLong()) % maxTs;
+                String value = random.nextDouble() + "";
                 put(conn, row, ts, Constants.DATA_QUALIFIER, value);
                 versionToValue.put(ts, Bytes.toBytes(value));
             }
 
 
             for (long i = 0L; i < maxTs * 2; i++) {
-                var ts = Math.abs(random.nextLong()) % (maxTs * 2);
+                long ts = Math.abs(random.nextLong()) % (maxTs * 2);
 
                 // the version will be read
-                var opt = versionToValue.entrySet().stream()
+                Optional<Map.Entry<Long, byte[]>> opt = versionToValue.entrySet().stream()
                         .filter(e -> e.getKey() < ts)
                         .max((e1, e2) -> (int) (e1.getKey() - e2.getKey()));
                 if (opt.isEmpty()) {
                     // nothing can be read, the timestamp is too small
                     expectEndpointGet(conn, row, ts);
                 } else {
-                    var writeTs = opt.get().getKey();
-                    var value = opt.get().getValue();
+                    long writeTs = opt.get().getKey();
+                    byte[] value = opt.get().getValue();
 
                     // check RT before Get
                     if (!maxRts.containsKey(writeTs)) {
@@ -175,8 +177,8 @@ class GetEndpointTest extends EndpointTest {
                         maxRts.put(writeTs, ts);
                         checkReadTimestamp(conn, row, writeTs, ts);
                     } else {
-                        var preRt = maxRts.get(writeTs);
-                        var curRt = preRt > ts ? preRt : ts;
+                        long preRt = maxRts.get(writeTs);
+                        long curRt = preRt > ts ? preRt : ts;
                         maxRts.put(writeTs, curRt);
                         checkReadTimestamp(conn, row, writeTs, curRt);
                     }

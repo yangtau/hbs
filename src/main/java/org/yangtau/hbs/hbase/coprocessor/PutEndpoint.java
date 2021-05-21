@@ -4,6 +4,8 @@ import com.google.protobuf.ByteString;
 import com.google.protobuf.RpcCallback;
 import com.google.protobuf.RpcController;
 import com.google.protobuf.Service;
+
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.CoprocessorEnvironment;
 import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.coprocessor.CoprocessorException;
@@ -25,7 +27,7 @@ public class PutEndpoint extends PutProtos.PutService implements HBSCoprocessor 
     // run Put request on the coprocessor
     static public CompletableFuture<Boolean> runAsync(
             AsyncTable<AdvancedScanResultConsumer> asyncTable, KeyValue.Key key, byte[] value, long timestamp) {
-        var request = PutProtos.PutRequest.newBuilder()
+        PutProtos.PutRequest request = PutProtos.PutRequest.newBuilder()
                 .setRow(ByteString.copyFrom(key.row()))
                 .setColumn(ByteString.copyFrom(key.column()))
                 .setValue(ByteString.copyFrom(value))
@@ -89,9 +91,9 @@ public class PutEndpoint extends PutProtos.PutService implements HBSCoprocessor 
             Region.RowLock lock = getLock(region, row);
             try {
                 // read the last version
-                var res = region.get(get);
-                var kv = res.getColumnLatestCell(family, Constants.DATA_QUALIFIER_BYTES);
-                var rtCell = res.getColumnLatestCell(family, Constants.READ_TIMESTAMP_QUALIFIER_BYTES);
+                Result res = region.get(get);
+                Cell kv = res.getColumnLatestCell(family, Constants.DATA_QUALIFIER_BYTES);
+                Cell rtCell = res.getColumnLatestCell(family, Constants.READ_TIMESTAMP_QUALIFIER_BYTES);
                 // find RT of this data cell by its version
                 if (kv != null && rtCell != null
                         && rtCell.getTimestamp() == kv.getTimestamp()) {

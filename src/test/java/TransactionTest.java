@@ -53,16 +53,16 @@ public class TransactionTest {
         storage.removeTable(table).join();
         conn.close();
         manager.close();
-        for (var e : connections.values()) {
+        for (AsyncConnection e : connections.values()) {
             e.close();
         }
     }
 
     Transaction createTxn() throws Exception {
-        var con = ConnectionFactory
+        AsyncConnection con = ConnectionFactory
                 .createAsyncConnection(HBaseConfiguration.create()).join();
 
-        var s = new HBaseStorage(con);
+        MVCCStorage s = new HBaseStorage(con);
         Transaction txn = new HBSTransaction(s,
                 manager,
                 new HBSCommitTable(s));
@@ -76,7 +76,7 @@ public class TransactionTest {
     }
 
     void check(KeyValue.Key key, Predicate<byte[]> predicate) throws Exception {
-        var txn = createTxn();
+        Transaction txn = createTxn();
         assertTrue(predicate.test(
                 txn.get(key.table(), key.row(), key.column())
         ));
@@ -84,7 +84,7 @@ public class TransactionTest {
     }
 
     void biCheck(KeyValue.Key key1, KeyValue.Key key2, BiPredicate<byte[], byte[]> predicate) throws Exception {
-        var txn = createTxn();
+        Transaction txn = createTxn();
         assertTrue(predicate.test(
                 txn.get(key1.table(), key1.row(), key1.column()),
                 txn.get(key2.table(), key2.row(), key2.column())));
@@ -101,8 +101,8 @@ public class TransactionTest {
     // txn2: x = 2, y = 2
     // txn2 commit before txn1
     void dirtyWriteCase1(String table, byte[] col, byte[] x, byte[] y) throws Exception {
-        var txn1 = createTxn();
-        var txn2 = createTxn();
+        Transaction txn1 = createTxn();
+        Transaction txn2 = createTxn();
         txn1.put(table, x, col, Bytes.toBytes(1));
 
         txn2.put(table, y, col, Bytes.toBytes(2));
@@ -115,8 +115,8 @@ public class TransactionTest {
 
     // txn2 abort before txn1 commit
     void dirtyWriteCase2(String table, byte[] col, byte[] x, byte[] y) throws Exception {
-        var txn1 = createTxn();
-        var txn2 = createTxn();
+        Transaction txn1 = createTxn();
+        Transaction txn2 = createTxn();
         txn1.put(table, x, col, Bytes.toBytes(1));
 
         txn2.put(table, y, col, Bytes.toBytes(2));
@@ -129,15 +129,15 @@ public class TransactionTest {
 
     @Test
     void dirtyWrite() throws Exception {
-        var table = "dirty-write-test";
-        var col = Bytes.toBytes("cf");
+        String table = "dirty-write-test";
+        byte[] col = Bytes.toBytes("cf");
         initTest(table, List.of(col));
 
-        var x = Bytes.toBytes("x");
-        var y = Bytes.toBytes("y");
+        byte[] x = Bytes.toBytes("x");
+        byte[] y = Bytes.toBytes("y");
 
         // x = y = 0
-        var txn0 = createTxn();
+        Transaction txn0 = createTxn();
         txn0.put(table, x, col, Bytes.toBytes(0));
         txn0.put(table, y, col, Bytes.toBytes(0));
         assertTrue(txn0.commit());
@@ -154,27 +154,27 @@ public class TransactionTest {
 
     @Test
     void dirtyRead() throws Exception {
-        var table = "dirty-read-test";
-        var col = Bytes.toBytes("cf");
+        String table = "dirty-read-test";
+        byte[] col = Bytes.toBytes("cf");
         initTest(table, List.of(col));
 
-        var x = Bytes.toBytes("x");
-        var y = Bytes.toBytes("y");
+        byte[] x = Bytes.toBytes("x");
+        byte[] y = Bytes.toBytes("y");
 
         // x = y = 0
-        var txn0 = createTxn();
+        Transaction txn0 = createTxn();
         txn0.put(table, x, col, Bytes.toBytes(0));
         txn0.put(table, y, col, Bytes.toBytes(0));
         assertTrue(txn0.commit());
 
-        var txn1 = createTxn();
-        var txn2 = createTxn();
+        Transaction txn1 = createTxn();
+        Transaction txn2 = createTxn();
         txn1.put(table, x, col, Bytes.toBytes(1));
         txn1.put(table, y, col, Bytes.toBytes(2));
 
         // txn2 should get the data written by txn0
-        var x2 = txn2.get(table, x, col);
-        var y2 = txn2.get(table, y, col);
+        byte[] x2 = txn2.get(table, x, col);
+        byte[] y2 = txn2.get(table, y, col);
         assertTrue(Arrays.equals(Bytes.toBytes(0), x2));
         assertTrue(Arrays.equals(Bytes.toBytes(0), y2));
 
@@ -188,25 +188,25 @@ public class TransactionTest {
 
     @Test
     void updateLost() throws Exception {
-        var table = "update-lost-test";
-        var col = Bytes.toBytes("cf");
+        String table = "update-lost-test";
+        byte[] col = Bytes.toBytes("cf");
         initTest(table, List.of(col));
 
-        var x = Bytes.toBytes("x");
+        byte[] x = Bytes.toBytes("x");
 
         // x = y = 0
-        var txn0 = createTxn();
+        Transaction txn0 = createTxn();
         txn0.put(table, x, col, Bytes.toBytes(0));
         assertTrue(txn0.commit());
         releaseTxn(txn0);
 
         // x = x + 1
-        var txn1 = createTxn();
+        Transaction txn1 = createTxn();
         // x = x + 10
-        var txn2 = createTxn();
+        Transaction txn2 = createTxn();
 
-        var txn1x = Bytes.toInt(txn1.get(table, x, col));
-        var txn2x = Bytes.toInt(txn2.get(table, x, col));
+        int txn1x = Bytes.toInt(txn1.get(table, x, col));
+        int txn2x = Bytes.toInt(txn2.get(table, x, col));
 
         txn1.put(table, x, col, Bytes.toBytes(1 + txn1x));
         txn2.put(table, x, col, Bytes.toBytes(2 + txn2x));
@@ -222,29 +222,29 @@ public class TransactionTest {
 
     @Test
     void fuzzyRead() throws Exception {
-        var table = "fuzzy-read-test";
-        var col = Bytes.toBytes("cf");
+        String table = "fuzzy-read-test";
+        byte[] col = Bytes.toBytes("cf");
         initTest(table, List.of(col));
 
-        var x = Bytes.toBytes("x");
+        byte[] x = Bytes.toBytes("x");
 
         // x = y = 0
-        var txn0 = createTxn();
+        Transaction txn0 = createTxn();
         txn0.put(table, x, col, Bytes.toBytes(0));
         assertTrue(txn0.commit());
 
         // x = 10
-        var txn1 = createTxn();
+        Transaction txn1 = createTxn();
         // read x twice
-        var txn2 = createTxn();
+        Transaction txn2 = createTxn();
 
 
-        var txn1x1 = Bytes.toInt(txn1.get(table, x, col));
+        int txn1x1 = Bytes.toInt(txn1.get(table, x, col));
 
         txn2.put(table, x, col, Bytes.toBytes(10));
         assertTrue(txn2.commit());
 
-        var txn1x2 = Bytes.toInt(txn1.get(table, x, col));
+        int txn1x2 = Bytes.toInt(txn1.get(table, x, col));
 
         assertEquals(txn1x1, txn1x2);
 
@@ -254,28 +254,28 @@ public class TransactionTest {
 
     @Test
     void readSkew() throws Exception {
-        var table = "read-skew-test";
-        var col = Bytes.toBytes("cf");
+        String table = "read-skew-test";
+        byte[] col = Bytes.toBytes("cf");
         initTest(table, List.of(col));
 
-        var x = Bytes.toBytes("x");
-        var y = Bytes.toBytes("y");
+        byte[] x = Bytes.toBytes("x");
+        byte[] y = Bytes.toBytes("y");
 
         // x = y = 0
-        var txn0 = createTxn();
+        Transaction txn0 = createTxn();
         txn0.put(table, x, col, Bytes.toBytes(0));
         txn0.put(table, y, col, Bytes.toBytes(0));
         assertTrue(txn0.commit());
 
         // write x = 1, write y = 1
-        var txn1 = createTxn();
+        Transaction txn1 = createTxn();
         // read x, read y
-        var txn2 = createTxn();
+        Transaction txn2 = createTxn();
 
-        var txn1x = txn2.get(table, x, col);
+        byte[] txn1x = txn2.get(table, x, col);
         txn1.put(table, x, col, Bytes.toBytes(1));
         txn1.put(table, y, col, Bytes.toBytes(1));
-        var txn1y = txn2.get(table, y, col);
+        byte[] txn1y = txn2.get(table, y, col);
 
         assertFalse(txn1.commit());
         assertTrue(txn2.commit());
@@ -288,27 +288,27 @@ public class TransactionTest {
 
     @Test
     void writeSkew() throws Exception {
-        var table = "write-skew-test";
-        var col = Bytes.toBytes("cf");
+        String table = "write-skew-test";
+        byte[] col = Bytes.toBytes("cf");
         initTest(table, List.of(col));
-        var x = Bytes.toBytes("x");
-        var y = Bytes.toBytes("y");
+        byte[] x = Bytes.toBytes("x");
+        byte[] y = Bytes.toBytes("y");
 
         // x = y = 1
-        var txn0 = createTxn();
+        Transaction txn0 = createTxn();
         txn0.put(table, x, col, Bytes.toBytes(1));
         txn0.put(table, y, col, Bytes.toBytes(1));
         assertTrue(txn0.commit());
 
         // txn1: if x+y == 2 then x = 0
-        var txn1 = createTxn();
+        Transaction txn1 = createTxn();
         // txn2: if x+y == 2 then y = 0
-        var txn2 = createTxn();
+        Transaction txn2 = createTxn();
 
-        var txn1x = txn1.get(table, x, col);
-        var txn1y = txn1.get(table, y, col);
-        var txn2x = txn2.get(table, x, col);
-        var txn2y = txn2.get(table, y, col);
+        byte[] txn1x = txn1.get(table, x, col);
+        byte[] txn1y = txn1.get(table, y, col);
+        byte[] txn2x = txn2.get(table, x, col);
+        byte[] txn2y = txn2.get(table, y, col);
 
         if (Bytes.toInt(txn1x) + Bytes.toInt(txn1y) == 2)
             txn1.put(table, x, col, Bytes.toBytes(0));
@@ -326,16 +326,16 @@ public class TransactionTest {
 
     @Test
     void concurrentWriteSkew() throws Exception {
-        var table = "con-write-skew-test";
-        var col = Bytes.toBytes("cf");
+        String table = "con-write-skew-test";
+        byte[] col = Bytes.toBytes("cf");
         initTest(table, List.of(col));
-        var x = Bytes.toBytes("x");
-        var y = Bytes.toBytes("y");
+        byte[] x = Bytes.toBytes("x");
+        byte[] y = Bytes.toBytes("y");
 
         int length = 100;
 
         // x = y = 1
-        var txn0 = createTxn();
+        Transaction txn0 = createTxn();
         txn0.put(table, x, col, Bytes.toBytes(1));
         txn0.put(table, y, col, Bytes.toBytes(1));
         assertTrue(txn0.commit());
@@ -343,10 +343,10 @@ public class TransactionTest {
         AtomicInteger committedCounter = new AtomicInteger(0);
         // if x+y == 2 then x = 0
         Runnable txnRunnable1 = () -> {
-            try (var conn = ConnectionFactory.createAsyncConnection(HBaseConfiguration.create()).join();
-                 var manager = new ZKTransactionManager("localhost")) {
-                var s = new HBaseStorage(conn);
-                var txn = new HBSTransaction(s, manager, new HBSCommitTable(s));
+            try (AsyncConnection conn = ConnectionFactory.createAsyncConnection(HBaseConfiguration.create()).join();
+                 TransactionManager manger = new ZKTransactionManager("localhost")) {
+                MVCCStorage s = new HBaseStorage(conn);
+                Transaction txn = new HBSTransaction(s, manager, new HBSCommitTable(s));
                 if (Bytes.toInt(txn.get(table, x, col)) + Bytes.toInt(txn.get(table, y, col)) == 2) {
                     txn.put(table, x, col, Bytes.toBytes(0));
                     if (txn.commit())
@@ -361,10 +361,10 @@ public class TransactionTest {
         };
         //  if x+y == 2 then y = 0
         Runnable txnRunnable2 = () -> {
-            try (var conn = ConnectionFactory.createAsyncConnection(HBaseConfiguration.create()).join();
-                 var manager = new ZKTransactionManager("localhost")) {
-                var s = new HBaseStorage(conn);
-                var txn = new HBSTransaction(s, manager, new HBSCommitTable(s));
+            try (AsyncConnection conn = ConnectionFactory.createAsyncConnection(HBaseConfiguration.create()).join();
+                 TransactionManager manger = new ZKTransactionManager("localhost")) {
+                MVCCStorage s = new HBaseStorage(conn);
+                Transaction txn = new HBSTransaction(s, manager, new HBSCommitTable(s));
                 if (Bytes.toInt(txn.get(table, x, col)) + Bytes.toInt(txn.get(table, y, col)) == 2) {
                     txn.put(table, y, col, Bytes.toBytes(0));
                     if (txn.commit())
@@ -380,10 +380,10 @@ public class TransactionTest {
 
         // if x == 0 then x = 1
         Runnable txnRunnable3 = () -> {
-            try (var conn = ConnectionFactory.createAsyncConnection(HBaseConfiguration.create()).join();
-                 var manager = new ZKTransactionManager("localhost")) {
-                var s = new HBaseStorage(conn);
-                var txn = new HBSTransaction(s, manager, new HBSCommitTable(s));
+            try (AsyncConnection conn = ConnectionFactory.createAsyncConnection(HBaseConfiguration.create()).join();
+                 TransactionManager manger = new ZKTransactionManager("localhost")) {
+                MVCCStorage s = new HBaseStorage(conn);
+                Transaction txn = new HBSTransaction(s, manager, new HBSCommitTable(s));
                 if (Bytes.toInt(txn.get(table, x, col)) == 0) {
                     txn.put(table, x, col, Bytes.toBytes(1));
                     if (txn.commit())
@@ -399,10 +399,10 @@ public class TransactionTest {
 
         // if y == 0 then y = 1
         Runnable txnRunnable4 = () -> {
-            try (var conn = ConnectionFactory.createAsyncConnection(HBaseConfiguration.create()).join();
-                 var manager = new ZKTransactionManager("localhost")) {
-                var s = new HBaseStorage(conn);
-                var txn = new HBSTransaction(s, manager, new HBSCommitTable(s));
+            try (AsyncConnection conn = ConnectionFactory.createAsyncConnection(HBaseConfiguration.create()).join();
+                 TransactionManager manger = new ZKTransactionManager("localhost")) {
+                MVCCStorage s = new HBaseStorage(conn);
+                Transaction txn = new HBSTransaction(s, manager, new HBSCommitTable(s));
                 if (Bytes.toInt(txn.get(table, y, col)) == 0) {
                     txn.put(table, y, col, Bytes.toBytes(1));
                     if (txn.commit())
@@ -418,11 +418,11 @@ public class TransactionTest {
 
         // check x + y == 1 or x + y == 2
         Runnable txnRunnable5 = () -> {
-            try (var conn = ConnectionFactory.createAsyncConnection(HBaseConfiguration.create()).join();
-                 var manager = new ZKTransactionManager("localhost")) {
-                var s = new HBaseStorage(conn);
-                var txn = new HBSTransaction(s, manager, new HBSCommitTable(s));
-                var res = Bytes.toInt(txn.get(table, x, col)) + Bytes.toInt(txn.get(table, y, col));
+            try (AsyncConnection conn = ConnectionFactory.createAsyncConnection(HBaseConfiguration.create()).join();
+                 TransactionManager manger = new ZKTransactionManager("localhost")) {
+                MVCCStorage s = new HBaseStorage(conn);
+                Transaction txn = new HBSTransaction(s, manager, new HBSCommitTable(s));
+                int res = Bytes.toInt(txn.get(table, x, col)) + Bytes.toInt(txn.get(table, y, col));
                 assertTrue(res == 1 || res == 2);
                 assertTrue(txn.commit());
                 committedCounter.incrementAndGet();
@@ -431,21 +431,17 @@ public class TransactionTest {
             }
         };
 
+        Runnable[] runnables = {txnRunnable1, txnRunnable2, txnRunnable3, txnRunnable4, txnRunnable5};
+
 
         List<Thread> threads = new ArrayList<>(length);
         for (int i = 0; i < length; i++) {
-            Thread t = switch (Math.abs(new Random().nextInt() % 5)) {
-                case 0 -> new Thread(txnRunnable1);
-                case 1 -> new Thread(txnRunnable2);
-                case 2 -> new Thread(txnRunnable3);
-                case 3 -> new Thread(txnRunnable4);
-                default -> new Thread(txnRunnable5);
-            };
+            Thread t = new Thread(runnables[Math.abs(new Random().nextInt() % 5)]);
             threads.add(t);
             t.start();
         }
 
-        for (var t : threads) {
+        for (Thread t : threads) {
             t.join();
         }
 
@@ -455,23 +451,23 @@ public class TransactionTest {
 
     @Test
     void concurrentTxns() throws Exception {
-        var table = "balance";
-        var col = Bytes.toBytes("data");
+        String table = "balance";
+        byte[] col = Bytes.toBytes("data");
         initTest(table, List.of(col));
 
         List<String> users = new ArrayList<>();
         final int len = 1000;
         final int userCount = 100;
         int sum = 0;
-        var random = new Random();
+        Random random = new Random();
 
-        var pool = Executors.newFixedThreadPool(100);
+        ExecutorService pool = Executors.newFixedThreadPool(100);
 
         // create users
-        var txn1 = createTxn();
+        Transaction txn1 = createTxn();
         for (int i = 0; i < userCount; i++) {
-            var b = Math.abs(random.nextInt() % 100);
-            var user = "user" + i;
+            int b = Math.abs(random.nextInt() % 100);
+            String user = "user" + i;
             sum += b;
             users.add(user);
             txn1.put(table, Bytes.toBytes(user), col, Bytes.toBytes(b));
@@ -483,14 +479,14 @@ public class TransactionTest {
         for (int i = 0; i < len; i++) {
             callables.add(() -> {
                 // if user1.balance > 20 than user1.balance -= 10; user2.balance += 10
-                var user1 = users.get(Math.abs(random.nextInt()) % userCount);
-                var user2 = users.get(Math.abs(random.nextInt()) % userCount);
-                try (var conn = ConnectionFactory.createAsyncConnection(HBaseConfiguration.create()).join();
-                     var manager = new ZKTransactionManager("localhost")) {
-                    var s = new HBaseStorage(conn);
-                    var txn = new HBSTransaction(s, manager, new HBSCommitTable(s));
+                String user1 = users.get(Math.abs(random.nextInt()) % userCount);
+                String user2 = users.get(Math.abs(random.nextInt()) % userCount);
+                try (AsyncConnection conn = ConnectionFactory.createAsyncConnection(HBaseConfiguration.create()).join();
+                     TransactionManager manger = new ZKTransactionManager("localhost")) {
+                    MVCCStorage s = new HBaseStorage(conn);
+                    Transaction txn = new HBSTransaction(s, manager, new HBSCommitTable(s));
 
-                    var user1Balance = Bytes.toInt(txn.get(table, Bytes.toBytes(user1), col));
+                    int user1Balance = Bytes.toInt(txn.get(table, Bytes.toBytes(user1), col));
                     if (user1Balance < 20) {
                         txn.abort();
                         counter.incrementAndGet();
@@ -498,7 +494,7 @@ public class TransactionTest {
                     }
 
                     txn.put(table, Bytes.toBytes(user1), col, Bytes.toBytes(user1Balance - 10));
-                    var user2Balance = Bytes.toInt(txn.get(table, Bytes.toBytes(user2), col));
+                    int user2Balance = Bytes.toInt(txn.get(table, Bytes.toBytes(user2), col));
                     if (user1.equals(user2)) {
                         assertEquals(user1Balance - 10, user2Balance);
                     }
@@ -515,15 +511,15 @@ public class TransactionTest {
             });
         }
 
-        for (var f : pool.invokeAll(callables))
+        for (Future<Void> f : pool.invokeAll(callables))
             f.get();
 
         System.out.println("#committed: " + counter);
 
         // check consistency
-        var txn2 = createTxn();
+        Transaction txn2 = createTxn();
         int newSum = 0;
-        for (var u : users) {
+        for (String u : users) {
             newSum += Bytes.toInt(txn2.get(table, Bytes.toBytes(u), col));
         }
         txn2.commit();
